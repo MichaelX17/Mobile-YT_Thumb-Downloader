@@ -6,15 +6,15 @@ import {
   TouchableOpacity,
   Image,
   StyleSheet,
-  Alert,
   ActivityIndicator,
-  Dimensions,
   Animated,
   KeyboardAvoidingView,
   Platform,
   Keyboard,
   ScrollView,
-  FlatList
+  FlatList,
+  useWindowDimensions,
+  Modal
 } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
@@ -24,6 +24,7 @@ const ACCENT = '#33ccff';
 const DARK_BG = '#1e1e1e';
 const TEXT_COLOR = '#ffffff';
 const SELECT_COLOR = '#3c84f4';
+const MODAL_BG = '#2a2a2a';
 
 type Thumbnail = {
   quality: string;
@@ -42,18 +43,56 @@ const THUMB_RES: Omit<Thumbnail, 'url'>[] = [
 export default function App() {
   const [url, setUrl] = useState<string>('');
   const [videoId, setVideoId] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(false);
+  const [downloading, setDownloading] = useState<boolean>(false);
   const [thumbs, setThumbs] = useState<Thumbnail[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [status, requestPermission] = MediaLibrary.usePermissions();
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalTitle, setModalTitle] = useState('');
+  const [modalMessage, setModalMessage] = useState('');
+  
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const isSmallScreen = screenHeight < 700;
+  const isLandscape = screenWidth > screenHeight;
 
   const thumbsScale = useRef(new Animated.Value(0)).current;
+  const formTranslateY = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     (async () => {
       if (!status?.granted) await requestPermission();
     })();
   }, []);
+
+  // Iniciar animación de pulso para el botón de descarga
+  useEffect(() => {
+  let animation: Animated.CompositeAnimation | null = null;
+  
+  if (selected.length > 0 && !downloading) {
+    animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 0,
+          duration: 800,
+          useNativeDriver: true
+        })
+      ])
+    );
+    animation.start();
+  } else {
+    pulseAnim.setValue(0);
+  }
+
+  return () => {
+    animation?.stop();
+  };
+}, [selected.length, downloading, pulseAnim]); // Añadir downloading como dependencia
 
   const extractVideoId = (url: string): string | null => {
     const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
@@ -68,15 +107,33 @@ export default function App() {
     }).start(callback);
   };
 
+  const animateForm = (toValue: number, callback?: () => void) => {
+    Animated.timing(formTranslateY, {
+      toValue,
+      duration: 400,
+      useNativeDriver: true
+    }).start(callback);
+  };
+
+  const showCustomAlert = (title: string, message: string) => {
+    setModalTitle(title);
+    setModalMessage(message);
+    setModalVisible(true);
+  };
+
   const searchThumbs = () => {
     Keyboard.dismiss();
     const id = extractVideoId(url.trim());
 
     if (!id) {
+      animateForm(0);
       triggerReset();
-      Alert.alert('Error', 'Invalid YouTube URL.');
+      showCustomAlert('Error', 'Invalid YouTube URL.');
       return;
     }
+
+    const formMoveValue = isSmallScreen ? -screenHeight * 0.15 : -screenHeight * 0.12;
+    animateForm(formMoveValue);
 
     const list = THUMB_RES.map(({ quality, resolution }) => ({
       quality,
@@ -94,6 +151,7 @@ export default function App() {
     animateThumbs(0, () => {
       setThumbs([]);
       setSelected([]);
+      animateForm(0);
     });
   };
 
@@ -106,64 +164,133 @@ export default function App() {
   };
 
   const downloadThumbs = async () => {
-    if (!status?.granted) {
-      const { granted } = await requestPermission();
-      if (!granted) {
-        Alert.alert('Permiso requerido', 'Se necesita acceso a la galería para guardar las imágenes.');
-        return;
+  // Verificar permisos
+  if (status?.status !== MediaLibrary.PermissionStatus.GRANTED) {
+    const { granted } = await requestPermission();
+    if (!granted) {
+      showCustomAlert('Permiso requerido', 'Se necesita acceso a la galería.');
+      return;
+    }
+  }
+
+  const toDownload = selected.length
+    ? thumbs.filter(t => selected.includes(t.quality))
+    : thumbs;
+
+  setDownloading(true);
+
+  try {
+    const albumName = 'YT_Thumbs';
+    let album: MediaLibrary.Album | null = null;
+    
+    // 1. Intentar obtener el álbum existente
+    album = await MediaLibrary.getAlbumAsync(albumName);
+    
+    // 2. Si no existe, crear el álbum con la primera miniatura
+    if (!album && toDownload.length > 0) {
+      // Descargar la primera miniatura
+      const firstThumb = toDownload[0];
+      const filename = `thumbnail_[${videoId}]_${firstThumb.resolution}.jpg`;
+      const tmpPath = FileSystem.cacheDirectory + filename;
+      const { uri } = await FileSystem.downloadAsync(firstThumb.url, tmpPath);
+      const asset = await MediaLibrary.createAssetAsync(uri);
+      
+      // Crear álbum con la primera miniatura
+      if (Platform.OS === 'android') {
+        await MediaLibrary.createAlbumAsync(albumName, asset, false);
+      } else {
+        await MediaLibrary.createAlbumAsync(albumName);
       }
+      
+      // Volver a buscar el álbum recién creado
+      album = await MediaLibrary.getAlbumAsync(albumName);
     }
 
-    const toDownload = selected.length
-      ? thumbs.filter(t => selected.includes(t.quality))
-      : thumbs;
-
-    setLoading(true);
-
-    try {
-      for (const t of toDownload) {
+    // 3. Descargar y agregar todas las miniaturas al álbum
+    for (const t of toDownload) {
+      try {
+        // Saltar la primera miniatura en Android porque ya fue procesada
+        if (Platform.OS === 'android' && t === toDownload[0]) continue;
+        
         const filename = `thumbnail_[${videoId}]_${t.resolution}.jpg`;
         const tmpPath = FileSystem.cacheDirectory + filename;
+        
+        // Descargar la imagen
         const { uri } = await FileSystem.downloadAsync(t.url, tmpPath);
         const asset = await MediaLibrary.createAssetAsync(uri);
-
-        try {
-          await MediaLibrary.createAlbumAsync('YT_Thumbs', asset, false);
-        } catch {
-          await MediaLibrary.addAssetsToAlbumAsync([asset], 'YT_Thumbs', false);
+        
+        // Agregar al álbum
+        if (album) {
+          await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+        } else {
+          await MediaLibrary.addAssetsToAlbumAsync([asset], albumName, false);
         }
+      } catch (error) {
+        console.error(`Error procesando ${t.quality}:`, error);
       }
-      Alert.alert('Éxito', 'Miniaturas guardadas en el álbum YT_Thumbs (Galería)');
-    } catch (e) {
-      Alert.alert('Error', `Fallo al guardar: ${(e as Error).message}`);
-    } finally {
-      setLoading(false);
     }
-  };
+    
+    showCustomAlert('Éxito', `${toDownload.length} miniaturas guardadas en la galería`);
+  } catch (e) {
+    let errorMessage = 'Error desconocido';
+    if (e instanceof Error) errorMessage = e.message;
+    else if (typeof e === 'string') errorMessage = e;
+    
+    showCustomAlert('Error', `Error al guardar: ${errorMessage}`);
+  } finally {
+    setDownloading(false);
+  }
+};
 
-  const screenWidth = Dimensions.get('window').width;
-  const imageWidth = screenWidth / 2.3;
+  // Cálculo responsivo de dimensiones
+  const imageWidth = isLandscape ? 
+    (screenWidth - 60) / 3 : 
+    isSmallScreen ? 
+      (screenWidth - 40) / 2 - 16 : 
+      (screenWidth - 56) / 2;
+  
+  const imageHeight = imageWidth * 0.5625;
 
   const renderItem = ({ item }: { item: Thumbnail }) => (
-    <Animated.View style={{ transform: [{ scale: thumbsScale }] }}>
-      <TouchableOpacity
-        onPress={() => toggleSelect(item.quality)}
-        style={[
-          styles.thumbContainer,
-          {
-            borderColor: selected.includes(item.quality) ? SELECT_COLOR : DARK_BG,
-            shadowColor: selected.includes(item.quality) ? SELECT_COLOR : 'transparent'
-          }
-        ]}
-      >
-        <Image
-          source={{ uri: item.url }}
-          style={{ width: imageWidth, height: imageWidth * 0.5625, borderRadius: 10 }}
-        />
-        <Text style={styles.thumbLabel}>{item.resolution}</Text>
-      </TouchableOpacity>
-    </Animated.View>
-  );
+  <Animated.View 
+    style={{ 
+      transform: [{ scale: thumbsScale }],
+      width: imageWidth,
+      margin: isSmallScreen ? 6 : 8
+    }}
+  >
+    <TouchableOpacity
+      onPress={() => !downloading && toggleSelect(item.quality)}
+      style={[
+        styles.thumbContainer,
+        {
+          borderColor: selected.includes(item.quality) ? SELECT_COLOR : DARK_BG,
+          shadowColor: selected.includes(item.quality) ? SELECT_COLOR : 'transparent',
+          width: '100%',
+        }
+      ]}
+    >
+      <Image
+        source={{ uri: item.url }}
+        style={{ 
+          width: '100%', 
+          height: imageHeight, 
+          borderRadius: 10 
+        }}
+      />
+      
+      {/* Overlay de carga para miniaturas seleccionadas */}
+      {downloading && selected.includes(item.quality) && (
+        <View style={styles.downloadingOverlay}>
+          <ActivityIndicator size="large" color={ACCENT} />
+          <Text style={{ color: TEXT_COLOR, marginTop: 5 }}>Guardando...</Text>
+        </View>
+      )}
+      
+      <Text style={styles.thumbLabel}>{item.resolution}</Text>
+    </TouchableOpacity>
+  </Animated.View>
+);
 
   return (
     <KeyboardAvoidingView
@@ -171,11 +298,24 @@ export default function App() {
       style={styles.wrapper}
     >
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { 
+            paddingTop: isSmallScreen ? screenHeight * 0.1 : screenHeight * 0.15,
+            paddingBottom: 100
+          }
+        ]}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.formContainer}>
-          <Text style={styles.title}>Download YouTube Thumbnails</Text>
+        <Animated.View
+          style={[styles.formContainer, { transform: [{ translateY: formTranslateY }] }]}
+        >
+          <Text style={[
+            styles.title,
+            isSmallScreen && { fontSize: 20, marginBottom: 12 }
+          ]}>
+            Download YouTube Thumbnails
+          </Text>
 
           <TextInput
             style={styles.input}
@@ -190,32 +330,78 @@ export default function App() {
           <TouchableOpacity style={styles.searchBtn} onPress={searchThumbs}>
             <Text style={styles.searchText}>Search</Text>
           </TouchableOpacity>
-        </View>
+        </Animated.View>
 
         {thumbs.length > 0 && (
-          <Animated.View style={{ opacity: thumbsScale }}>
+          <Animated.View style={{ 
+            opacity: thumbsScale, 
+            marginTop: isSmallScreen ? -60 : -70,
+            width: '100%',
+          }}>
             <Text style={styles.sub}>Tap to select thumbnails</Text>
             <FlatList
               data={thumbs}
               renderItem={renderItem}
               keyExtractor={item => item.quality}
-              numColumns={2}
+              numColumns={isLandscape ? 3 : 2}
               scrollEnabled={false}
               contentContainerStyle={styles.thumbGrid}
+              columnWrapperStyle={isLandscape ? undefined : styles.columnWrapper}
             />
           </Animated.View>
         )}
-
-        {selected.length > 0 && (
-          <Animated.View style={styles.downloadBtnWrapper}>
-            <TouchableOpacity style={styles.downloadBtn} onPress={downloadThumbs}>
-              <Text style={styles.searchText}>Download Selected</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        )}
-
-        {loading && <ActivityIndicator size="large" color={ACCENT} style={{ marginTop: 20 }} />}
       </ScrollView>
+
+      {selected.length > 0 && (
+        <Animated.View 
+          style={[
+            styles.downloadBtnWrapper,
+            isLandscape && { bottom: 10 },
+            isSmallScreen && { bottom: 5 },
+            {
+              shadowOpacity: pulseAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.3, 1]
+              }),
+              shadowRadius: pulseAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [8, 15]
+              })
+            }
+          ]}
+        >
+          <TouchableOpacity 
+            style={styles.downloadBtn} 
+            onPress={downloadThumbs}
+            disabled={downloading}
+          >
+            <Text style={styles.searchText}>
+              {downloading ? 'Downloading...' : 'Download Selected'}
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
+      )}
+      
+      {/* Modal personalizado para alertas */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>{modalTitle}</Text>
+            <Text style={styles.modalMessage}>{modalMessage}</Text>
+            <TouchableOpacity 
+              style={styles.modalButton} 
+              onPress={() => setModalVisible(false)}
+            >
+              <Text style={styles.modalButtonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -224,13 +410,11 @@ const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
     backgroundColor: DARK_BG,
-    paddingTop: Constants.statusBarHeight
+    paddingTop: Constants.statusBarHeight,
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
     paddingHorizontal: 20,
-    paddingBottom: 100
   },
   formContainer: {
     width: '100%',
@@ -273,11 +457,13 @@ const styles = StyleSheet.create({
   thumbGrid: {
     justifyContent: 'center',
     alignItems: 'center',
-    paddingBottom: 80
+    paddingBottom: 20
+  },
+  columnWrapper: {
+    justifyContent: 'center',
   },
   thumbContainer: {
     borderWidth: 2,
-    margin: 8,
     borderRadius: 10,
     overflow: 'hidden',
     shadowOffset: { width: 0, height: 0 },
@@ -290,17 +476,88 @@ const styles = StyleSheet.create({
     color: TEXT_COLOR,
     textAlign: 'center',
     marginTop: 5,
-    fontSize: 12
+    fontSize: 12,
+    paddingBottom: 5
+  },
+  downloadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(30, 30, 30, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8
   },
   downloadBtnWrapper: {
-    marginTop: 20,
-    alignItems: 'center'
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+    alignItems: 'center',
+    shadowColor: SELECT_COLOR,
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 15,
+    elevation: 15,
   },
   downloadBtn: {
     backgroundColor: SELECT_COLOR,
     padding: 14,
     borderRadius: 30,
     alignItems: 'center',
-    width: '100%'
-  }
+    width: '100%',
+    marginTop: -90
+  },
+  // Estilos para el modal personalizado
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContainer: {
+    backgroundColor: MODAL_BG,
+    borderRadius: 15,
+    padding: 25,
+    width: '90%',
+    maxWidth: 400,
+    borderWidth: 1,
+    borderColor: ACCENT,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: ACCENT,
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: TEXT_COLOR,
+    marginBottom: 20,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  modalButton: {
+    backgroundColor: ACCENT,
+    borderRadius: 8,
+    padding: 14,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  modalButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
 });
