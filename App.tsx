@@ -50,7 +50,7 @@ export default function App() {
   const [modalVisible, setModalVisible] = useState(false);
   const [modalTitle, setModalTitle] = useState('');
   const [modalMessage, setModalMessage] = useState('');
-  
+
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const isSmallScreen = screenHeight < 700;
   const isLandscape = screenWidth > screenHeight;
@@ -67,32 +67,32 @@ export default function App() {
 
   // Iniciar animación de pulso para el botón de descarga
   useEffect(() => {
-  let animation: Animated.CompositeAnimation | null = null;
-  
-  if (selected.length > 0 && !downloading) {
-    animation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 800,
-          useNativeDriver: true
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 0,
-          duration: 800,
-          useNativeDriver: true
-        })
-      ])
-    );
-    animation.start();
-  } else {
-    pulseAnim.setValue(0);
-  }
+    let animation: Animated.CompositeAnimation | null = null;
 
-  return () => {
-    animation?.stop();
-  };
-}, [selected.length, downloading, pulseAnim]); // Añadir downloading como dependencia
+    if (selected.length > 0 && !downloading) {
+      animation = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 0,
+            duration: 800,
+            useNativeDriver: true
+          })
+        ])
+      );
+      animation.start();
+    } else {
+      pulseAnim.setValue(0);
+    }
+
+    return () => {
+      animation?.stop();
+    };
+  }, [selected.length, downloading, pulseAnim]);
 
   const extractVideoId = (url: string): string | null => {
     const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
@@ -181,38 +181,21 @@ export default function App() {
 
   try {
     const albumName = 'YT_Thumbs';
-    let album: MediaLibrary.Album | null = null;
     
-    // 1. Intentar obtener el álbum existente
-    album = await MediaLibrary.getAlbumAsync(albumName);
+    // 1. Verificar si el álbum existe
+    let album = await MediaLibrary.getAlbumAsync(albumName);
     
-    // 2. Si no existe, crear el álbum con la primera miniatura
-    if (!album && toDownload.length > 0) {
-      // Descargar la primera miniatura
-      const firstThumb = toDownload[0];
-      const filename = `thumbnail_[${videoId}]_${firstThumb.resolution}.jpg`;
-      const tmpPath = FileSystem.cacheDirectory + filename;
-      const { uri } = await FileSystem.downloadAsync(firstThumb.url, tmpPath);
-      const asset = await MediaLibrary.createAssetAsync(uri);
-      
-      // Crear álbum con la primera miniatura
-      if (Platform.OS === 'android') {
-        await MediaLibrary.createAlbumAsync(albumName, asset, false);
-      } else {
-        await MediaLibrary.createAlbumAsync(albumName);
-      }
-      
-      // Volver a buscar el álbum recién creado
+    // 2. Si no existe, crearlo
+    if (!album) {
+      // Crear un álbum vacío (solución universal)
+      await MediaLibrary.createAlbumAsync(albumName);
       album = await MediaLibrary.getAlbumAsync(albumName);
     }
 
-    // 3. Descargar y agregar todas las miniaturas al álbum
+    // 3. Descargar y guardar todas las miniaturas
     for (const t of toDownload) {
       try {
-        // Saltar la primera miniatura en Android porque ya fue procesada
-        if (Platform.OS === 'android' && t === toDownload[0]) continue;
-        
-        const filename = `thumbnail_[${videoId}]_${t.resolution}.jpg`;
+        const filename = `thumbnail_${videoId}_${t.resolution}.jpg`;
         const tmpPath = FileSystem.cacheDirectory + filename;
         
         // Descargar la imagen
@@ -220,17 +203,13 @@ export default function App() {
         const asset = await MediaLibrary.createAssetAsync(uri);
         
         // Agregar al álbum
-        if (album) {
-          await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-        } else {
-          await MediaLibrary.addAssetsToAlbumAsync([asset], albumName, false);
-        }
+        await MediaLibrary.addAssetsToAlbumAsync([asset], album || albumName, false);
       } catch (error) {
         console.error(`Error procesando ${t.quality}:`, error);
       }
     }
     
-    showCustomAlert('Éxito', `${toDownload.length} miniaturas guardadas en la galería`);
+    showCustomAlert('Éxito', `${toDownload.length} miniaturas guardadas en la carpeta YT_Thumbs`);
   } catch (e) {
     let errorMessage = 'Error desconocido';
     if (e instanceof Error) errorMessage = e.message;
@@ -243,54 +222,54 @@ export default function App() {
 };
 
   // Cálculo responsivo de dimensiones
-  const imageWidth = isLandscape ? 
-    (screenWidth - 60) / 3 : 
-    isSmallScreen ? 
-      (screenWidth - 40) / 2 - 16 : 
+  const imageWidth = isLandscape ?
+    (screenWidth - 60) / 3 :
+    isSmallScreen ?
+      (screenWidth - 40) / 2 - 16 :
       (screenWidth - 56) / 2;
-  
+
   const imageHeight = imageWidth * 0.5625;
 
   const renderItem = ({ item }: { item: Thumbnail }) => (
-  <Animated.View 
-    style={{ 
-      transform: [{ scale: thumbsScale }],
-      width: imageWidth,
-      margin: isSmallScreen ? 6 : 8
-    }}
-  >
-    <TouchableOpacity
-      onPress={() => !downloading && toggleSelect(item.quality)}
-      style={[
-        styles.thumbContainer,
-        {
-          borderColor: selected.includes(item.quality) ? SELECT_COLOR : DARK_BG,
-          shadowColor: selected.includes(item.quality) ? SELECT_COLOR : 'transparent',
-          width: '100%',
-        }
-      ]}
+    <Animated.View
+      style={{
+        transform: [{ scale: thumbsScale }],
+        width: imageWidth,
+        margin: isSmallScreen ? 6 : 8
+      }}
     >
-      <Image
-        source={{ uri: item.url }}
-        style={{ 
-          width: '100%', 
-          height: imageHeight, 
-          borderRadius: 10 
-        }}
-      />
-      
-      {/* Overlay de carga para miniaturas seleccionadas */}
-      {downloading && selected.includes(item.quality) && (
-        <View style={styles.downloadingOverlay}>
-          <ActivityIndicator size="large" color={ACCENT} />
-          <Text style={{ color: TEXT_COLOR, marginTop: 5 }}>Guardando...</Text>
-        </View>
-      )}
-      
-      <Text style={styles.thumbLabel}>{item.resolution}</Text>
-    </TouchableOpacity>
-  </Animated.View>
-);
+      <TouchableOpacity
+        onPress={() => !downloading && toggleSelect(item.quality)}
+        style={[
+          styles.thumbContainer,
+          {
+            borderColor: selected.includes(item.quality) ? SELECT_COLOR : DARK_BG,
+            shadowColor: selected.includes(item.quality) ? SELECT_COLOR : 'transparent',
+            width: '100%',
+          }
+        ]}
+      >
+        <Image
+          source={{ uri: item.url }}
+          style={{
+            width: '100%',
+            height: imageHeight,
+            borderRadius: 10
+          }}
+        />
+
+        {/* Overlay de carga para miniaturas seleccionadas */}
+        {downloading && selected.includes(item.quality) && (
+          <View style={styles.downloadingOverlay}>
+            <ActivityIndicator size="large" color={ACCENT} />
+            <Text style={{ color: TEXT_COLOR, marginTop: 5 }}>Guardando...</Text>
+          </View>
+        )}
+
+        <Text style={styles.thumbLabel}>{item.resolution}</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
 
   return (
     <KeyboardAvoidingView
@@ -300,7 +279,7 @@ export default function App() {
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { 
+          {
             paddingTop: isSmallScreen ? screenHeight * 0.1 : screenHeight * 0.15,
             paddingBottom: 100
           }
@@ -333,8 +312,8 @@ export default function App() {
         </Animated.View>
 
         {thumbs.length > 0 && (
-          <Animated.View style={{ 
-            opacity: thumbsScale, 
+          <Animated.View style={{
+            opacity: thumbsScale,
             marginTop: isSmallScreen ? -60 : -70,
             width: '100%',
           }}>
@@ -353,7 +332,7 @@ export default function App() {
       </ScrollView>
 
       {selected.length > 0 && (
-        <Animated.View 
+        <Animated.View
           style={[
             styles.downloadBtnWrapper,
             isLandscape && { bottom: 10 },
@@ -370,8 +349,8 @@ export default function App() {
             }
           ]}
         >
-          <TouchableOpacity 
-            style={styles.downloadBtn} 
+          <TouchableOpacity
+            style={styles.downloadBtn}
             onPress={downloadThumbs}
             disabled={downloading}
           >
@@ -381,7 +360,7 @@ export default function App() {
           </TouchableOpacity>
         </Animated.View>
       )}
-      
+
       {/* Modal personalizado para alertas */}
       <Modal
         animationType="fade"
@@ -393,8 +372,8 @@ export default function App() {
           <View style={styles.modalContainer}>
             <Text style={styles.modalTitle}>{modalTitle}</Text>
             <Text style={styles.modalMessage}>{modalMessage}</Text>
-            <TouchableOpacity 
-              style={styles.modalButton} 
+            <TouchableOpacity
+              style={styles.modalButton}
               onPress={() => setModalVisible(false)}
             >
               <Text style={styles.modalButtonText}>OK</Text>
