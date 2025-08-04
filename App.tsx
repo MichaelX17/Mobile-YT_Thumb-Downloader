@@ -1,360 +1,3 @@
-// import React, { useRef, useState, useEffect } from 'react';
-// import {
-//   View,
-//   Text,
-//   TextInput,
-//   TouchableOpacity,
-//   Image,
-//   StyleSheet,
-//   Alert,
-//   ActivityIndicator,
-//   Animated,
-//   Keyboard,
-//   FlatList,
-//   StatusBar,
-//   Platform,
-//   SafeAreaView,
-//   useWindowDimensions,
-//   KeyboardAvoidingView,
-//   AppState,
-// } from 'react-native';
-// import * as FileSystem from 'expo-file-system';
-// import * as MediaLibrary from 'expo-media-library';
-// import * as NavigationBar from 'expo-navigation-bar';
-
-// interface ThumbData {
-//   url: string;
-//   quality: string;
-//   videoId: string;
-// }
-
-// const CustomAlert = (title: string, message: string) => {
-//   Alert.alert(title, message, [{ text: 'OK' }], { cancelable: true });
-// };
-
-// export default function App() {
-//   const [url, setUrl] = useState('');
-//   const [thumbs, setThumbs] = useState<ThumbData[]>([]);
-//   const [selected, setSelected] = useState<ThumbData[]>([]);
-//   const [loading, setLoading] = useState(false);
-//   const [permissionResponse, requestPermission] = MediaLibrary.usePermissions();
-
-//   const { height: windowHeight } = useWindowDimensions();
-//   const formTranslateY = useRef(new Animated.Value(windowHeight * 0.3)).current;
-
-//   useEffect(() => {
-//     if (Platform.OS === 'android') {
-//       NavigationBar.setBackgroundColorAsync('#121212').catch(console.warn);
-//       NavigationBar.setButtonStyleAsync('light').catch(console.warn);
-//     }
-//   }, []);
-
-//   useEffect(() => {
-//     const sub = AppState.addEventListener('change', (state) => {
-//       if (state === 'active') {
-//         const targetY = thumbs.length > 0 ? 20 : windowHeight * 0.3;
-//         Animated.timing(formTranslateY, {
-//           toValue: targetY,
-//           duration: 0,
-//           useNativeDriver: true,
-//         }).start();
-//       }
-//     });
-//     return () => sub.remove();
-//   }, [thumbs.length, windowHeight]);
-
-//   const handleSearch = async () => {
-//     if (!url.trim()) {
-//       CustomAlert('URL vacía', 'Por favor ingresa una URL de YouTube');
-//       return;
-//     }
-
-//     setThumbs([]);
-//     setSelected([]);
-
-//     const id = extractVideoId(url);
-//     if (!id) {
-//       CustomAlert('URL inválida', 'Por favor ingresa una URL válida de YouTube');
-//       return;
-//     }
-
-//     Keyboard.dismiss();
-//     setLoading(true);
-
-//     try {
-//       const base = `https://img.youtube.com/vi/${id}`;
-//       const qualities = ['maxresdefault', 'sddefault', 'hqdefault', 'mqdefault'];
-//       const availableThumbs: ThumbData[] = [];
-
-//       for (const q of qualities) {
-//         const thumbUrl = `${base}/${q}.jpg`;
-//         const exists = await checkThumbExists(thumbUrl);
-//         if (exists) availableThumbs.push({ url: thumbUrl, quality: q, videoId: id });
-//       }
-
-//       if (availableThumbs.length === 0) {
-//         CustomAlert('Sin resultados', 'No se encontraron miniaturas disponibles');
-//         return;
-//       }
-
-//       setThumbs(availableThumbs);
-
-//       Animated.timing(formTranslateY, {
-//         toValue: 20,
-//         duration: 300,
-//         useNativeDriver: true,
-//       }).start();
-//     } catch (error) {
-//       console.error('Error en búsqueda:', error);
-//       CustomAlert('Error', 'No se pudieron cargar las miniaturas');
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   const checkThumbExists = async (url: string): Promise<boolean> => {
-//     try {
-//       const response = await fetch(url, { method: 'HEAD' });
-//       return response.ok && response.headers.get('content-type')?.startsWith('image/') === true;
-//     } catch {
-//       return false;
-//     }
-//   };
-
-//   const extractVideoId = (url: string): string | null => {
-//     const patterns = [
-//       /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/,
-//       /^([a-zA-Z0-9_-]{11})$/,
-//     ];
-//     for (const regex of patterns) {
-//       const match = url.match(regex);
-//       if (match?.[1]) return match[1];
-//     }
-//     return null;
-//   };
-
-//   const toggleSelect = (thumb: ThumbData) => {
-//     setSelected((prev) =>
-//       prev.some((t) => t.url === thumb.url)
-//         ? prev.filter((t) => t.url !== thumb.url)
-//         : [...prev, thumb]
-//     );
-//   };
-
-//   const downloadSelected = async () => {
-//     if (selected.length === 0) return;
-
-//     try {
-//       let status = permissionResponse?.status;
-
-//       if (!status || status !== 'granted') {
-//         const result = await requestPermission();
-//         status = result.status;
-//       }
-
-//       if (status !== 'granted') {
-//         CustomAlert('Permiso denegado', 'Se necesita acceso a la galería para guardar imágenes');
-//         return;
-//       }
-
-//       setLoading(true);
-
-//       for (const thumb of selected) {
-//         const filename = `yt_thumb_${thumb.videoId}_${thumb.quality}.jpg`;
-//         const fileUri = `${FileSystem.cacheDirectory}${filename}`;
-
-//         try {
-//           const { uri } = await FileSystem.downloadAsync(thumb.url, fileUri);
-//           const asset = await MediaLibrary.createAssetAsync(uri);
-//           const album = await MediaLibrary.getAlbumAsync('YouTube Thumbs');
-
-//           if (album) {
-//             await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-//           } else {
-//             await MediaLibrary.createAlbumAsync('YouTube Thumbs', asset, false);
-//           }
-//         } catch (error) {
-//           console.error(`Error descargando ${thumb.quality}:`, error);
-//         }
-//       }
-
-//       CustomAlert('Éxito', 'Imágenes guardadas correctamente');
-//     } catch (error) {
-//       console.error('Error en descarga:', error);
-//       CustomAlert('Error', 'No se pudieron guardar las imágenes');
-//     } finally {
-//       setLoading(false);
-//       setSelected([]);
-//     }
-//   };
-
-//   const renderThumb = ({ item }: { item: ThumbData }) => (
-//     <TouchableOpacity
-//       style={[styles.thumbContainer, selected.some((t) => t.url === item.url) && styles.thumbSelected]}
-//       onPress={() => toggleSelect(item)}
-//       activeOpacity={0.7}
-//     >
-//       <Image source={{ uri: item.url }} style={styles.thumbnail} resizeMode="cover" />
-//       <Text style={styles.qualityLabel}>{item.quality}</Text>
-//     </TouchableOpacity>
-//   );
-
-//   return (
-//     <SafeAreaView style={styles.safeArea}>
-//       <StatusBar barStyle="light-content" backgroundColor="#121212" />
-//       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
-//         <View style={styles.container}>
-//           <Animated.View style={[styles.form, { transform: [{ translateY: formTranslateY }] }]}>
-//             <TextInput
-//               style={styles.input}
-//               placeholder="Enter YouTube URL"
-//               placeholderTextColor="#ccc"
-//               value={url}
-//               onChangeText={setUrl}
-//               onSubmitEditing={handleSearch}
-//               keyboardType="url"
-//               autoCapitalize="none"
-//               autoCorrect={false}
-//               returnKeyType="search"
-//             />
-//             <TouchableOpacity
-//               style={[styles.button, loading && styles.buttonDisabled]}
-//               onPress={handleSearch}
-//               disabled={loading}
-//               activeOpacity={0.7}
-//             >
-//               {loading ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>Search</Text>}
-//             </TouchableOpacity>
-//           </Animated.View>
-
-//           {loading && thumbs.length === 0 && (
-//             <ActivityIndicator size="large" color="#00ffff" style={styles.loadingIndicator} />
-//           )}
-
-//           <FlatList
-//             data={thumbs}
-//             keyExtractor={(item) => item.url}
-//             renderItem={renderThumb}
-//             numColumns={2}
-//             contentContainerStyle={{ paddingTop: thumbs.length > 0 ? 220 : 0, paddingBottom: 20 }}
-//             style={styles.flatList}
-//             ListEmptyComponent={
-//               !loading ? (
-//                 <View style={styles.emptyContainer}>
-//                   <Text style={styles.emptyText}>{url ? 'No thumbnails found' : 'Enter a YouTube URL'}</Text>
-//                 </View>
-//               ) : null
-//             }
-//             ListFooterComponent={
-//               selected.length > 0 ? (
-//                 <TouchableOpacity
-//                   style={styles.downloadButton}
-//                   onPress={downloadSelected}
-//                   activeOpacity={0.8}
-//                   disabled={loading}
-//                 >
-//                   {loading ? (
-//                     <ActivityIndicator color="white" />
-//                   ) : (
-//                     <Text style={styles.downloadText}>Download ({selected.length})</Text>
-//                   )}
-//                 </TouchableOpacity>
-//               ) : null
-//             }
-//             removeClippedSubviews={false}
-//           />
-//         </View>
-//       </KeyboardAvoidingView>
-//     </SafeAreaView>
-//   );
-// }
-
-// const styles = StyleSheet.create({
-//   safeArea: { flex: 1, backgroundColor: '#121212' },
-//   container: { flex: 1, backgroundColor: '#121212', position: 'relative' },
-//   form: {
-//     width: '90%',
-//     alignSelf: 'center',
-//     padding: 20,
-//     backgroundColor: '#1a1a1a',
-//     borderRadius: 15,
-//     shadowColor: '#000',
-//     shadowOffset: { width: 0, height: 4 },
-//     shadowOpacity: 0.3,
-//     shadowRadius: 6,
-//     elevation: 8,
-//     position: 'absolute',
-//   },
-//   input: {
-//     backgroundColor: '#222',
-//     color: 'white',
-//     width: '100%',
-//     padding: 16,
-//     borderRadius: 10,
-//     fontSize: 16,
-//     marginBottom: 15,
-//     borderWidth: 1,
-//     borderColor: '#333',
-//   },
-//   button: {
-//     backgroundColor: '#1e90ff',
-//     paddingVertical: 15,
-//     borderRadius: 10,
-//     alignItems: 'center',
-//     justifyContent: 'center',
-//     minHeight: 50,
-//   },
-//   buttonDisabled: { backgroundColor: '#1e90ff80' },
-//   buttonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
-//   flatList: { flex: 1, backgroundColor: '#121212' },
-//   thumbContainer: {
-//     flex: 1,
-//     margin: 8,
-//     backgroundColor: '#222',
-//     borderRadius: 10,
-//     overflow: 'hidden',
-//     borderWidth: 2,
-//     borderColor: '#333',
-//     maxWidth: '48%',
-//   },
-//   thumbSelected: { borderColor: '#1e90ff', backgroundColor: '#1e1e3c' },
-//   thumbnail: { width: '100%', aspectRatio: 16 / 9 },
-//   qualityLabel: {
-//     color: 'white',
-//     textAlign: 'center',
-//     padding: 8,
-//     fontSize: 14,
-//     backgroundColor: '#00000080',
-//   },
-//   downloadButton: {
-//     backgroundColor: '#32cd32',
-//     padding: 16,
-//     borderRadius: 12,
-//     alignItems: 'center',
-//     marginTop: 20,
-//     marginHorizontal: 10,
-//   },
-//   downloadText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-//   loadingIndicator: {
-//     position: 'absolute',
-//     top: '50%',
-//     left: '50%',
-//     marginLeft: -20,
-//     marginTop: -20,
-//   },
-//   emptyContainer: {
-//     flex: 1,
-//     justifyContent: 'center',
-//     alignItems: 'center',
-//     paddingHorizontal: 20,
-//     paddingTop: 100,
-//   },
-//   emptyText: { color: '#888', textAlign: 'center', fontSize: 16 },
-// });
-
-
-
-
 import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
@@ -398,7 +41,7 @@ export default function App() {
   const [selected, setSelected] = useState<ThumbData[]>([]);
   const [loading, setLoading] = useState(false);
   const [permissionStatus, requestPermission] = MediaLibrary.usePermissions();
-  const [alert, setAlert] = useState<AlertState>({ // Estado alert declarado
+  const [alert, setAlert] = useState<AlertState>({
     visible: false,
     title: '',
     message: '',
@@ -429,7 +72,7 @@ export default function App() {
     return () => sub.remove();
   }, [thumbs.length]);
 
-  const showAlert = ( // Función showAlert definida
+  const showAlert = (
     title: string,
     message: string,
     type: 'success' | 'error' | 'info' = 'info'
@@ -455,7 +98,7 @@ export default function App() {
 
   const handleSearch = async () => {
     if (!url.trim()) {
-      showAlert('URL vacía', 'Por favor ingresa una URL de YouTube', 'error');
+      showAlert('Empty URL', 'Please enter a YouTube URL', 'error');
       resetAppState();
       return;
     }
@@ -464,7 +107,7 @@ export default function App() {
 
     const id = extractVideoId(url);
     if (!id) {
-      showAlert('URL inválida', 'Por favor ingresa una URL válida de YouTube', 'error');
+      showAlert('Invalid URL', 'Please enter a valid YouTube URL', 'error');
       resetAppState();
       return;
     }
@@ -484,7 +127,7 @@ export default function App() {
       }
 
       if (availableThumbs.length === 0) {
-        showAlert('Sin resultados', 'No se encontraron miniaturas disponibles', 'error');
+        showAlert('No results', 'No thumbnails found', 'error');
         resetAppState();
         return;
       }
@@ -497,8 +140,8 @@ export default function App() {
         useNativeDriver: true,
       }).start();
     } catch (error) {
-      console.error('Error en búsqueda:', error);
-      showAlert('Error', 'No se pudieron cargar las miniaturas', 'error');
+      console.error('Search error:', error);
+      showAlert('Error', 'Failed to load thumbnails', 'error');
       resetAppState();
     } finally {
       setLoading(false);
@@ -546,7 +189,7 @@ export default function App() {
       }
 
       if (status !== 'granted') {
-        showAlert('Permiso denegado', 'Se necesita acceso a la galería para guardar imágenes', 'error');
+        showAlert('Permission denied', 'Gallery access is required to save images', 'error');
         return;
       }
 
@@ -560,7 +203,7 @@ export default function App() {
           const { uri } = await FileSystem.downloadAsync(thumb.url, fileUri);
           return MediaLibrary.createAssetAsync(uri);
         } catch (error) {
-          console.error(`Error descargando ${thumb.quality}:`, error);
+          console.error(`Download error [${thumb.quality}]:`, error);
           return null;
         }
       });
@@ -580,13 +223,13 @@ export default function App() {
             }
           }
         }
-        showAlert('Éxito', `Se guardaron ${assets.length} imágenes correctamente`, 'success');
+        showAlert('Success', `${assets.length} images saved successfully`, 'success');
       } else {
-        showAlert('Error', 'No se pudieron guardar las imágenes', 'error');
+        showAlert('Error', 'Failed to save images', 'error');
       }
     } catch (error) {
-      console.error('Error en descarga:', error);
-      showAlert('Error', 'Ocurrió un problema al guardar las imágenes', 'error');
+      console.error('Download error:', error);
+      showAlert('Error', 'An error occurred while saving images', 'error');
     } finally {
       setLoading(false);
       setSelected([]);
@@ -691,7 +334,6 @@ export default function App() {
         </View>
       </KeyboardAvoidingView>
 
-      {/* Modern Alert Modal */}
       <Modal
         visible={alert.visible}
         transparent
@@ -802,8 +444,6 @@ const styles = StyleSheet.create({
     paddingTop: 100,
   },
   emptyText: { color: '#888', textAlign: 'center', fontSize: 16 },
-
-  // Modern Alert Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
