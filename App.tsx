@@ -1,4 +1,361 @@
-import React, { useEffect, useRef, useState } from 'react';
+// import React, { useRef, useState, useEffect } from 'react';
+// import {
+//   View,
+//   Text,
+//   TextInput,
+//   TouchableOpacity,
+//   Image,
+//   StyleSheet,
+//   Alert,
+//   ActivityIndicator,
+//   Animated,
+//   Keyboard,
+//   FlatList,
+//   StatusBar,
+//   Platform,
+//   SafeAreaView,
+//   useWindowDimensions,
+//   KeyboardAvoidingView,
+//   AppState,
+// } from 'react-native';
+// import * as FileSystem from 'expo-file-system';
+// import * as MediaLibrary from 'expo-media-library';
+// import * as NavigationBar from 'expo-navigation-bar';
+
+// interface ThumbData {
+//   url: string;
+//   quality: string;
+//   videoId: string;
+// }
+
+// const CustomAlert = (title: string, message: string) => {
+//   Alert.alert(title, message, [{ text: 'OK' }], { cancelable: true });
+// };
+
+// export default function App() {
+//   const [url, setUrl] = useState('');
+//   const [thumbs, setThumbs] = useState<ThumbData[]>([]);
+//   const [selected, setSelected] = useState<ThumbData[]>([]);
+//   const [loading, setLoading] = useState(false);
+//   const [permissionResponse, requestPermission] = MediaLibrary.usePermissions();
+
+//   const { height: windowHeight } = useWindowDimensions();
+//   const formTranslateY = useRef(new Animated.Value(windowHeight * 0.3)).current;
+
+//   useEffect(() => {
+//     if (Platform.OS === 'android') {
+//       NavigationBar.setBackgroundColorAsync('#121212').catch(console.warn);
+//       NavigationBar.setButtonStyleAsync('light').catch(console.warn);
+//     }
+//   }, []);
+
+//   useEffect(() => {
+//     const sub = AppState.addEventListener('change', (state) => {
+//       if (state === 'active') {
+//         const targetY = thumbs.length > 0 ? 20 : windowHeight * 0.3;
+//         Animated.timing(formTranslateY, {
+//           toValue: targetY,
+//           duration: 0,
+//           useNativeDriver: true,
+//         }).start();
+//       }
+//     });
+//     return () => sub.remove();
+//   }, [thumbs.length, windowHeight]);
+
+//   const handleSearch = async () => {
+//     if (!url.trim()) {
+//       CustomAlert('URL vacía', 'Por favor ingresa una URL de YouTube');
+//       return;
+//     }
+
+//     setThumbs([]);
+//     setSelected([]);
+
+//     const id = extractVideoId(url);
+//     if (!id) {
+//       CustomAlert('URL inválida', 'Por favor ingresa una URL válida de YouTube');
+//       return;
+//     }
+
+//     Keyboard.dismiss();
+//     setLoading(true);
+
+//     try {
+//       const base = `https://img.youtube.com/vi/${id}`;
+//       const qualities = ['maxresdefault', 'sddefault', 'hqdefault', 'mqdefault'];
+//       const availableThumbs: ThumbData[] = [];
+
+//       for (const q of qualities) {
+//         const thumbUrl = `${base}/${q}.jpg`;
+//         const exists = await checkThumbExists(thumbUrl);
+//         if (exists) availableThumbs.push({ url: thumbUrl, quality: q, videoId: id });
+//       }
+
+//       if (availableThumbs.length === 0) {
+//         CustomAlert('Sin resultados', 'No se encontraron miniaturas disponibles');
+//         return;
+//       }
+
+//       setThumbs(availableThumbs);
+
+//       Animated.timing(formTranslateY, {
+//         toValue: 20,
+//         duration: 300,
+//         useNativeDriver: true,
+//       }).start();
+//     } catch (error) {
+//       console.error('Error en búsqueda:', error);
+//       CustomAlert('Error', 'No se pudieron cargar las miniaturas');
+//     } finally {
+//       setLoading(false);
+//     }
+//   };
+
+//   const checkThumbExists = async (url: string): Promise<boolean> => {
+//     try {
+//       const response = await fetch(url, { method: 'HEAD' });
+//       return response.ok && response.headers.get('content-type')?.startsWith('image/') === true;
+//     } catch {
+//       return false;
+//     }
+//   };
+
+//   const extractVideoId = (url: string): string | null => {
+//     const patterns = [
+//       /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/,
+//       /^([a-zA-Z0-9_-]{11})$/,
+//     ];
+//     for (const regex of patterns) {
+//       const match = url.match(regex);
+//       if (match?.[1]) return match[1];
+//     }
+//     return null;
+//   };
+
+//   const toggleSelect = (thumb: ThumbData) => {
+//     setSelected((prev) =>
+//       prev.some((t) => t.url === thumb.url)
+//         ? prev.filter((t) => t.url !== thumb.url)
+//         : [...prev, thumb]
+//     );
+//   };
+
+//   const downloadSelected = async () => {
+//     if (selected.length === 0) return;
+
+//     try {
+//       let status = permissionResponse?.status;
+
+//       if (!status || status !== 'granted') {
+//         const result = await requestPermission();
+//         status = result.status;
+//       }
+
+//       if (status !== 'granted') {
+//         CustomAlert('Permiso denegado', 'Se necesita acceso a la galería para guardar imágenes');
+//         return;
+//       }
+
+//       setLoading(true);
+
+//       for (const thumb of selected) {
+//         const filename = `yt_thumb_${thumb.videoId}_${thumb.quality}.jpg`;
+//         const fileUri = `${FileSystem.cacheDirectory}${filename}`;
+
+//         try {
+//           const { uri } = await FileSystem.downloadAsync(thumb.url, fileUri);
+//           const asset = await MediaLibrary.createAssetAsync(uri);
+//           const album = await MediaLibrary.getAlbumAsync('YouTube Thumbs');
+
+//           if (album) {
+//             await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+//           } else {
+//             await MediaLibrary.createAlbumAsync('YouTube Thumbs', asset, false);
+//           }
+//         } catch (error) {
+//           console.error(`Error descargando ${thumb.quality}:`, error);
+//         }
+//       }
+
+//       CustomAlert('Éxito', 'Imágenes guardadas correctamente');
+//     } catch (error) {
+//       console.error('Error en descarga:', error);
+//       CustomAlert('Error', 'No se pudieron guardar las imágenes');
+//     } finally {
+//       setLoading(false);
+//       setSelected([]);
+//     }
+//   };
+
+//   const renderThumb = ({ item }: { item: ThumbData }) => (
+//     <TouchableOpacity
+//       style={[styles.thumbContainer, selected.some((t) => t.url === item.url) && styles.thumbSelected]}
+//       onPress={() => toggleSelect(item)}
+//       activeOpacity={0.7}
+//     >
+//       <Image source={{ uri: item.url }} style={styles.thumbnail} resizeMode="cover" />
+//       <Text style={styles.qualityLabel}>{item.quality}</Text>
+//     </TouchableOpacity>
+//   );
+
+//   return (
+//     <SafeAreaView style={styles.safeArea}>
+//       <StatusBar barStyle="light-content" backgroundColor="#121212" />
+//       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+//         <View style={styles.container}>
+//           <Animated.View style={[styles.form, { transform: [{ translateY: formTranslateY }] }]}>
+//             <TextInput
+//               style={styles.input}
+//               placeholder="Enter YouTube URL"
+//               placeholderTextColor="#ccc"
+//               value={url}
+//               onChangeText={setUrl}
+//               onSubmitEditing={handleSearch}
+//               keyboardType="url"
+//               autoCapitalize="none"
+//               autoCorrect={false}
+//               returnKeyType="search"
+//             />
+//             <TouchableOpacity
+//               style={[styles.button, loading && styles.buttonDisabled]}
+//               onPress={handleSearch}
+//               disabled={loading}
+//               activeOpacity={0.7}
+//             >
+//               {loading ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>Search</Text>}
+//             </TouchableOpacity>
+//           </Animated.View>
+
+//           {loading && thumbs.length === 0 && (
+//             <ActivityIndicator size="large" color="#00ffff" style={styles.loadingIndicator} />
+//           )}
+
+//           <FlatList
+//             data={thumbs}
+//             keyExtractor={(item) => item.url}
+//             renderItem={renderThumb}
+//             numColumns={2}
+//             contentContainerStyle={{ paddingTop: thumbs.length > 0 ? 220 : 0, paddingBottom: 20 }}
+//             style={styles.flatList}
+//             ListEmptyComponent={
+//               !loading ? (
+//                 <View style={styles.emptyContainer}>
+//                   <Text style={styles.emptyText}>{url ? 'No thumbnails found' : 'Enter a YouTube URL'}</Text>
+//                 </View>
+//               ) : null
+//             }
+//             ListFooterComponent={
+//               selected.length > 0 ? (
+//                 <TouchableOpacity
+//                   style={styles.downloadButton}
+//                   onPress={downloadSelected}
+//                   activeOpacity={0.8}
+//                   disabled={loading}
+//                 >
+//                   {loading ? (
+//                     <ActivityIndicator color="white" />
+//                   ) : (
+//                     <Text style={styles.downloadText}>Download ({selected.length})</Text>
+//                   )}
+//                 </TouchableOpacity>
+//               ) : null
+//             }
+//             removeClippedSubviews={false}
+//           />
+//         </View>
+//       </KeyboardAvoidingView>
+//     </SafeAreaView>
+//   );
+// }
+
+// const styles = StyleSheet.create({
+//   safeArea: { flex: 1, backgroundColor: '#121212' },
+//   container: { flex: 1, backgroundColor: '#121212', position: 'relative' },
+//   form: {
+//     width: '90%',
+//     alignSelf: 'center',
+//     padding: 20,
+//     backgroundColor: '#1a1a1a',
+//     borderRadius: 15,
+//     shadowColor: '#000',
+//     shadowOffset: { width: 0, height: 4 },
+//     shadowOpacity: 0.3,
+//     shadowRadius: 6,
+//     elevation: 8,
+//     position: 'absolute',
+//   },
+//   input: {
+//     backgroundColor: '#222',
+//     color: 'white',
+//     width: '100%',
+//     padding: 16,
+//     borderRadius: 10,
+//     fontSize: 16,
+//     marginBottom: 15,
+//     borderWidth: 1,
+//     borderColor: '#333',
+//   },
+//   button: {
+//     backgroundColor: '#1e90ff',
+//     paddingVertical: 15,
+//     borderRadius: 10,
+//     alignItems: 'center',
+//     justifyContent: 'center',
+//     minHeight: 50,
+//   },
+//   buttonDisabled: { backgroundColor: '#1e90ff80' },
+//   buttonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+//   flatList: { flex: 1, backgroundColor: '#121212' },
+//   thumbContainer: {
+//     flex: 1,
+//     margin: 8,
+//     backgroundColor: '#222',
+//     borderRadius: 10,
+//     overflow: 'hidden',
+//     borderWidth: 2,
+//     borderColor: '#333',
+//     maxWidth: '48%',
+//   },
+//   thumbSelected: { borderColor: '#1e90ff', backgroundColor: '#1e1e3c' },
+//   thumbnail: { width: '100%', aspectRatio: 16 / 9 },
+//   qualityLabel: {
+//     color: 'white',
+//     textAlign: 'center',
+//     padding: 8,
+//     fontSize: 14,
+//     backgroundColor: '#00000080',
+//   },
+//   downloadButton: {
+//     backgroundColor: '#32cd32',
+//     padding: 16,
+//     borderRadius: 12,
+//     alignItems: 'center',
+//     marginTop: 20,
+//     marginHorizontal: 10,
+//   },
+//   downloadText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+//   loadingIndicator: {
+//     position: 'absolute',
+//     top: '50%',
+//     left: '50%',
+//     marginLeft: -20,
+//     marginTop: -20,
+//   },
+//   emptyContainer: {
+//     flex: 1,
+//     justifyContent: 'center',
+//     alignItems: 'center',
+//     paddingHorizontal: 20,
+//     paddingTop: 100,
+//   },
+//   emptyText: { color: '#888', textAlign: 'center', fontSize: 16 },
+// });
+
+
+
+
+import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,534 +365,500 @@ import {
   StyleSheet,
   ActivityIndicator,
   Animated,
-  KeyboardAvoidingView,
-  Platform,
   Keyboard,
-  ScrollView,
   FlatList,
+  StatusBar,
+  Platform,
+  SafeAreaView,
   useWindowDimensions,
-  Modal
+  KeyboardAvoidingView,
+  AppState,
+  Modal,
 } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
-import Constants from 'expo-constants';
+import * as NavigationBar from 'expo-navigation-bar';
 
-const ACCENT = '#33ccff';
-const DARK_BG = '#1e1e1e';
-const TEXT_COLOR = '#ffffff';
-const SELECT_COLOR = '#3c84f4';
-const MODAL_BG = '#2a2a2a';
-
-type Thumbnail = {
-  quality: string;
-  resolution: string;
+interface ThumbData {
   url: string;
-};
+  quality: string;
+  videoId: string;
+}
 
-const THUMB_RES: Omit<Thumbnail, 'url'>[] = [
-  { quality: 'maxresdefault', resolution: '1280x720' },
-  { quality: 'sddefault', resolution: '640x480' },
-  { quality: 'hqdefault', resolution: '480x360' },
-  { quality: 'mqdefault', resolution: '320x180' },
-  { quality: 'default', resolution: '120x90' }
-];
+interface AlertState {
+  visible: boolean;
+  title: string;
+  message: string;
+  type: 'success' | 'error' | 'info';
+}
 
 export default function App() {
-  const [url, setUrl] = useState<string>('');
-  const [videoId, setVideoId] = useState<string>('');
-  const [downloading, setDownloading] = useState<boolean>(false);
-  const [thumbs, setThumbs] = useState<Thumbnail[]>([]);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [status, requestPermission] = MediaLibrary.usePermissions();
-  const [modalVisible, setModalVisible] = useState(false);
-  const [modalTitle, setModalTitle] = useState('');
-  const [modalMessage, setModalMessage] = useState('');
+  const [url, setUrl] = useState('');
+  const [thumbs, setThumbs] = useState<ThumbData[]>([]);
+  const [selected, setSelected] = useState<ThumbData[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [permissionStatus, requestPermission] = MediaLibrary.usePermissions();
+  const [alert, setAlert] = useState<AlertState>({ // Estado alert declarado
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info'
+  });
 
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  const isSmallScreen = screenHeight < 700;
-  const isLandscape = screenWidth > screenHeight;
-
-  const thumbsScale = useRef(new Animated.Value(0)).current;
-  const formTranslateY = useRef(new Animated.Value(0)).current;
-  const pulseAnim = useRef(new Animated.Value(0)).current;
+  const { height: windowHeight } = useWindowDimensions();
+  const initialTranslateY = useRef(windowHeight * 0.3).current;
+  const formTranslateY = useRef(new Animated.Value(initialTranslateY)).current;
 
   useEffect(() => {
-    (async () => {
-      if (!status?.granted) await requestPermission();
-    })();
+    if (Platform.OS === 'android') {
+      NavigationBar.setBackgroundColorAsync('#121212').catch(console.warn);
+      NavigationBar.setButtonStyleAsync('light').catch(console.warn);
+    }
   }, []);
 
-  // Iniciar animación de pulso para el botón de descarga
   useEffect(() => {
-    let animation: Animated.CompositeAnimation | null = null;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        Animated.timing(formTranslateY, {
+          toValue: thumbs.length > 0 ? 20 : initialTranslateY,
+          duration: 0,
+          useNativeDriver: true,
+        }).start();
+      }
+    });
+    return () => sub.remove();
+  }, [thumbs.length]);
 
-    if (selected.length > 0 && !downloading) {
-      animation = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 800,
-            useNativeDriver: true
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 0,
-            duration: 800,
-            useNativeDriver: true
-          })
-        ])
-      );
-      animation.start();
-    } else {
-      pulseAnim.setValue(0);
+  const showAlert = ( // Función showAlert definida
+    title: string,
+    message: string,
+    type: 'success' | 'error' | 'info' = 'info'
+  ) => {
+    setAlert({ visible: true, title, message, type });
+  };
+
+  const hideAlert = () => {
+    setAlert(prev => ({ ...prev, visible: false }));
+  };
+
+  const resetAppState = (animate = true) => {
+    setThumbs([]);
+    setSelected([]);
+    if (animate) {
+      Animated.timing(formTranslateY, {
+        toValue: initialTranslateY,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
     }
-
-    return () => {
-      animation?.stop();
-    };
-  }, [selected.length, downloading, pulseAnim]);
-
-  const extractVideoId = (url: string): string | null => {
-    const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
-    return match ? match[1] : null;
   };
 
-  const animateThumbs = (toValue: number, callback?: () => void) => {
-    Animated.timing(thumbsScale, {
-      toValue,
-      duration: 400,
-      useNativeDriver: true
-    }).start(callback);
-  };
-
-  const animateForm = (toValue: number, callback?: () => void) => {
-    Animated.timing(formTranslateY, {
-      toValue,
-      duration: 400,
-      useNativeDriver: true
-    }).start(callback);
-  };
-
-  const showCustomAlert = (title: string, message: string) => {
-    setModalTitle(title);
-    setModalMessage(message);
-    setModalVisible(true);
-  };
-
-  const searchThumbs = () => {
-    Keyboard.dismiss();
-    const id = extractVideoId(url.trim());
-
-    if (!id) {
-      animateForm(0);
-      triggerReset();
-      showCustomAlert('Error', 'Invalid YouTube URL.');
+  const handleSearch = async () => {
+    if (!url.trim()) {
+      showAlert('URL vacía', 'Por favor ingresa una URL de YouTube', 'error');
+      resetAppState();
       return;
     }
 
-    const formMoveValue = isSmallScreen ? -screenHeight * 0.15 : -screenHeight * 0.12;
-    animateForm(formMoveValue);
+    resetAppState(false);
 
-    const list = THUMB_RES.map(({ quality, resolution }) => ({
-      quality,
-      resolution,
-      url: `https://img.youtube.com/vi/${id}/${quality}.jpg`
-    }));
+    const id = extractVideoId(url);
+    if (!id) {
+      showAlert('URL inválida', 'Por favor ingresa una URL válida de YouTube', 'error');
+      resetAppState();
+      return;
+    }
 
-    setVideoId(id);
-    setThumbs(list);
-    setSelected([]);
-    animateThumbs(1);
+    Keyboard.dismiss();
+    setLoading(true);
+
+    try {
+      const base = `https://img.youtube.com/vi/${id}`;
+      const qualities = ['maxresdefault', 'sddefault', 'hqdefault', 'mqdefault'];
+      const availableThumbs: ThumbData[] = [];
+
+      for (const q of qualities) {
+        const thumbUrl = `${base}/${q}.jpg`;
+        const exists = await checkThumbExists(thumbUrl);
+        if (exists) availableThumbs.push({ url: thumbUrl, quality: q, videoId: id });
+      }
+
+      if (availableThumbs.length === 0) {
+        showAlert('Sin resultados', 'No se encontraron miniaturas disponibles', 'error');
+        resetAppState();
+        return;
+      }
+
+      setThumbs(availableThumbs);
+
+      Animated.timing(formTranslateY, {
+        toValue: 20,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    } catch (error) {
+      console.error('Error en búsqueda:', error);
+      showAlert('Error', 'No se pudieron cargar las miniaturas', 'error');
+      resetAppState();
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const triggerReset = () => {
-    animateThumbs(0, () => {
-      setThumbs([]);
-      setSelected([]);
-      animateForm(0);
-    });
+  const checkThumbExists = async (url: string): Promise<boolean> => {
+    try {
+      const response = await fetch(url, { method: 'HEAD' });
+      return response.ok && response.headers.get('content-type')?.startsWith('image/') === true;
+    } catch {
+      return false;
+    }
   };
 
-  const toggleSelect = (quality: string) => {
-    setSelected(prev =>
-      prev.includes(quality)
-        ? prev.filter(q => q !== quality)
-        : [...prev, quality]
+  const extractVideoId = (url: string): string | null => {
+    const patterns = [
+      /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/,
+      /^([a-zA-Z0-9_-]{11})$/,
+    ];
+    for (const regex of patterns) {
+      const match = url.match(regex);
+      if (match?.[1]) return match[1];
+    }
+    return null;
+  };
+
+  const toggleSelect = (thumb: ThumbData) => {
+    setSelected((prev) =>
+      prev.some((t) => t.url === thumb.url)
+        ? prev.filter((t) => t.url !== thumb.url)
+        : [...prev, thumb]
     );
   };
 
-  const downloadThumbs = async () => {
-  // Verificar permisos
-  if (status?.status !== MediaLibrary.PermissionStatus.GRANTED) {
-    const { granted } = await requestPermission();
-    if (!granted) {
-      showCustomAlert('Permiso requerido', 'Se necesita acceso a la galería.');
-      return;
-    }
-  }
+  const downloadSelected = async () => {
+    if (selected.length === 0) return;
 
-  const toDownload = selected.length
-    ? thumbs.filter(t => selected.includes(t.quality))
-    : thumbs;
+    try {
+      let status = permissionStatus?.status;
 
-  setDownloading(true);
-
-  try {
-    const albumName = 'YT_Thumbs';
-    
-    // 1. Verificar si el álbum existe
-    let album = await MediaLibrary.getAlbumAsync(albumName);
-    
-    // 2. Si no existe, crearlo
-    if (!album) {
-      // Crear un álbum vacío (solución universal)
-      await MediaLibrary.createAlbumAsync(albumName);
-      album = await MediaLibrary.getAlbumAsync(albumName);
-    }
-
-    // 3. Descargar y guardar todas las miniaturas
-    for (const t of toDownload) {
-      try {
-        const filename = `thumbnail_${videoId}_${t.resolution}.jpg`;
-        const tmpPath = FileSystem.cacheDirectory + filename;
-        
-        // Descargar la imagen
-        const { uri } = await FileSystem.downloadAsync(t.url, tmpPath);
-        const asset = await MediaLibrary.createAssetAsync(uri);
-        
-        // Agregar al álbum
-        await MediaLibrary.addAssetsToAlbumAsync([asset], album || albumName, false);
-      } catch (error) {
-        console.error(`Error procesando ${t.quality}:`, error);
+      if (!status || status !== 'granted') {
+        const result = await requestPermission();
+        status = result.status;
       }
-    }
-    
-    showCustomAlert('Éxito', `${toDownload.length} miniaturas guardadas en la carpeta YT_Thumbs`);
-  } catch (e) {
-    let errorMessage = 'Error desconocido';
-    if (e instanceof Error) errorMessage = e.message;
-    else if (typeof e === 'string') errorMessage = e;
-    
-    showCustomAlert('Error', `Error al guardar: ${errorMessage}`);
-  } finally {
-    setDownloading(false);
-  }
-};
 
-  // Cálculo responsivo de dimensiones
-  const imageWidth = isLandscape ?
-    (screenWidth - 60) / 3 :
-    isSmallScreen ?
-      (screenWidth - 40) / 2 - 16 :
-      (screenWidth - 56) / 2;
+      if (status !== 'granted') {
+        showAlert('Permiso denegado', 'Se necesita acceso a la galería para guardar imágenes', 'error');
+        return;
+      }
 
-  const imageHeight = imageWidth * 0.5625;
+      setLoading(true);
 
-  const renderItem = ({ item }: { item: Thumbnail }) => (
-    <Animated.View
-      style={{
-        transform: [{ scale: thumbsScale }],
-        width: imageWidth,
-        margin: isSmallScreen ? 6 : 8
-      }}
-    >
-      <TouchableOpacity
-        onPress={() => !downloading && toggleSelect(item.quality)}
-        style={[
-          styles.thumbContainer,
-          {
-            borderColor: selected.includes(item.quality) ? SELECT_COLOR : DARK_BG,
-            shadowColor: selected.includes(item.quality) ? SELECT_COLOR : 'transparent',
-            width: '100%',
+      const savePromises = selected.map(async (thumb) => {
+        const filename = `yt_thumb_${thumb.videoId}_${thumb.quality}.jpg`;
+        const fileUri = `${FileSystem.cacheDirectory}${filename}`;
+        
+        try {
+          const { uri } = await FileSystem.downloadAsync(thumb.url, fileUri);
+          return MediaLibrary.createAssetAsync(uri);
+        } catch (error) {
+          console.error(`Error descargando ${thumb.quality}:`, error);
+          return null;
+        }
+      });
+
+      const assets = (await Promise.all(savePromises)).filter(Boolean) as MediaLibrary.Asset[];
+
+      if (assets.length > 0) {
+        const album = await MediaLibrary.getAlbumAsync('YouTube Thumbs');
+        if (album) {
+          await MediaLibrary.addAssetsToAlbumAsync(assets, album, false);
+        } else {
+          await MediaLibrary.createAlbumAsync('YouTube Thumbs', assets[0], false);
+          if (assets.length > 1) {
+            const newAlbum = await MediaLibrary.getAlbumAsync('YouTube Thumbs');
+            if (newAlbum) {
+              await MediaLibrary.addAssetsToAlbumAsync(assets.slice(1), newAlbum, false);
+            }
           }
-        ]}
-      >
-        <Image
-          source={{ uri: item.url }}
-          style={{
-            width: '100%',
-            height: imageHeight,
-            borderRadius: 10
-          }}
-        />
+        }
+        showAlert('Éxito', `Se guardaron ${assets.length} imágenes correctamente`, 'success');
+      } else {
+        showAlert('Error', 'No se pudieron guardar las imágenes', 'error');
+      }
+    } catch (error) {
+      console.error('Error en descarga:', error);
+      showAlert('Error', 'Ocurrió un problema al guardar las imágenes', 'error');
+    } finally {
+      setLoading(false);
+      setSelected([]);
+    }
+  };
 
-        {/* Overlay de carga para miniaturas seleccionadas */}
-        {downloading && selected.includes(item.quality) && (
-          <View style={styles.downloadingOverlay}>
-            <ActivityIndicator size="large" color={ACCENT} />
-            <Text style={{ color: TEXT_COLOR, marginTop: 5 }}>Guardando...</Text>
-          </View>
-        )}
-
-        <Text style={styles.thumbLabel}>{item.resolution}</Text>
-      </TouchableOpacity>
-    </Animated.View>
+  const renderThumb = ({ item }: { item: ThumbData }) => (
+    <TouchableOpacity
+      style={[styles.thumbContainer, selected.some((t) => t.url === item.url) && styles.thumbSelected]}
+      onPress={() => toggleSelect(item)}
+      activeOpacity={0.7}
+    >
+      <Image source={{ uri: item.url }} style={styles.thumbnail} resizeMode="cover" />
+      <Text style={styles.qualityLabel}>{item.quality}</Text>
+    </TouchableOpacity>
   );
 
+  const getAlertIcon = () => {
+    switch (alert.type) {
+      case 'success':
+        return '✅';
+      case 'error':
+        return '❌';
+      default:
+        return 'ℹ️';
+    }
+  };
+
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={styles.wrapper}
-    >
-      <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            paddingTop: isSmallScreen ? screenHeight * 0.1 : screenHeight * 0.15,
-            paddingBottom: 100
-          }
-        ]}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Animated.View
-          style={[styles.formContainer, { transform: [{ translateY: formTranslateY }] }]}
-        >
-          <Text style={[
-            styles.title,
-            isSmallScreen && { fontSize: 20, marginBottom: 12 }
-          ]}>
-            Download YouTube Thumbnails
-          </Text>
-
-          <TextInput
-            style={styles.input}
-            placeholder="Enter YouTube URL"
-            placeholderTextColor="#aaa"
-            value={url}
-            onChangeText={setUrl}
-            onSubmitEditing={searchThumbs}
-            returnKeyType="search"
-          />
-
-          <TouchableOpacity style={styles.searchBtn} onPress={searchThumbs}>
-            <Text style={styles.searchText}>Search</Text>
-          </TouchableOpacity>
-        </Animated.View>
-
-        {thumbs.length > 0 && (
-          <Animated.View style={{
-            opacity: thumbsScale,
-            marginTop: isSmallScreen ? -60 : -70,
-            width: '100%',
-          }}>
-            <Text style={styles.sub}>Tap to select thumbnails</Text>
-            <FlatList
-              data={thumbs}
-              renderItem={renderItem}
-              keyExtractor={item => item.quality}
-              numColumns={isLandscape ? 3 : 2}
-              scrollEnabled={false}
-              contentContainerStyle={styles.thumbGrid}
-              columnWrapperStyle={isLandscape ? undefined : styles.columnWrapper}
-            />
-          </Animated.View>
-        )}
-      </ScrollView>
-
-      {selected.length > 0 && (
-        <Animated.View
-          style={[
-            styles.downloadBtnWrapper,
-            isLandscape && { bottom: 10 },
-            isSmallScreen && { bottom: 5 },
-            {
-              shadowOpacity: pulseAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.3, 1]
-              }),
-              shadowRadius: pulseAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [8, 15]
-              })
-            }
-          ]}
-        >
-          <TouchableOpacity
-            style={styles.downloadBtn}
-            onPress={downloadThumbs}
-            disabled={downloading}
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor="#121212" />
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+        <View style={styles.container}>
+          <Animated.View
+            style={[
+              styles.form,
+              {
+                transform: [{ translateY: formTranslateY }],
+                zIndex: 999,
+                elevation: 20,
+              },
+            ]}
           >
-            <Text style={styles.searchText}>
-              {downloading ? 'Downloading...' : 'Download Selected'}
-            </Text>
-          </TouchableOpacity>
-        </Animated.View>
-      )}
+            <TextInput
+              style={styles.input}
+              placeholder="Enter YouTube URL"
+              placeholderTextColor="#ccc"
+              value={url}
+              onChangeText={setUrl}
+              onSubmitEditing={handleSearch}
+              keyboardType="url"
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonDisabled]}
+              onPress={handleSearch}
+              disabled={loading}
+              activeOpacity={0.7}
+            >
+              {loading ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>Search</Text>}
+            </TouchableOpacity>
+          </Animated.View>
 
-      {/* Modal personalizado para alertas */}
+          {loading && thumbs.length === 0 && (
+            <ActivityIndicator size="large" color="#00ffff" style={styles.loadingIndicator} />
+          )}
+
+          <FlatList
+            data={thumbs}
+            keyExtractor={(item) => item.url}
+            renderItem={renderThumb}
+            numColumns={2}
+            contentContainerStyle={{ paddingTop: thumbs.length > 0 ? 220 : 0, paddingBottom: 20 }}
+            style={styles.flatList}
+            ListEmptyComponent={
+              !loading ? (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>{url ? 'No thumbnails found' : 'Enter a YouTube URL'}</Text>
+                </View>
+              ) : null
+            }
+            ListFooterComponent={
+              selected.length > 0 ? (
+                <TouchableOpacity
+                  style={styles.downloadButton}
+                  onPress={downloadSelected}
+                  activeOpacity={0.8}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <Text style={styles.downloadText}>Download ({selected.length})</Text>
+                  )}
+                </TouchableOpacity>
+              ) : null
+            }
+            removeClippedSubviews={false}
+          />
+        </View>
+      </KeyboardAvoidingView>
+
+      {/* Modern Alert Modal */}
       <Modal
+        visible={alert.visible}
+        transparent
         animationType="fade"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={hideAlert}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>{modalTitle}</Text>
-            <Text style={styles.modalMessage}>{modalMessage}</Text>
+          <View style={[
+            styles.modalContainer,
+            alert.type === 'success' && styles.modalSuccess,
+            alert.type === 'error' && styles.modalError,
+            alert.type === 'info' && styles.modalInfo
+          ]}>
+            <Text style={styles.modalIcon}>{getAlertIcon()}</Text>
+            <Text style={styles.modalTitle}>{alert.title}</Text>
+            <Text style={styles.modalMessage}>{alert.message}</Text>
             <TouchableOpacity
               style={styles.modalButton}
-              onPress={() => setModalVisible(false)}
+              onPress={hideAlert}
             >
               <Text style={styles.modalButtonText}>OK</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
-    </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  wrapper: {
-    flex: 1,
-    backgroundColor: DARK_BG,
-    paddingTop: Constants.statusBarHeight,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 20,
-  },
-  formContainer: {
-    width: '100%',
-    alignItems: 'center'
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: TEXT_COLOR,
-    textAlign: 'center',
-    marginBottom: 20
+  safeArea: { flex: 1, backgroundColor: '#121212' },
+  container: { flex: 1, backgroundColor: '#121212', position: 'relative' },
+  form: {
+    width: '90%',
+    alignSelf: 'center',
+    padding: 20,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 20,
+    position: 'absolute',
   },
   input: {
-    backgroundColor: '#2a2a2a',
-    color: TEXT_COLOR,
-    padding: 10,
-    borderRadius: 8,
+    backgroundColor: '#222',
+    color: 'white',
+    width: '100%',
+    padding: 16,
+    borderRadius: 10,
     fontSize: 16,
-    width: '100%'
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#333',
   },
-  searchBtn: {
-    backgroundColor: ACCENT,
-    marginTop: 15,
-    padding: 12,
-    borderRadius: 8,
+  button: {
+    backgroundColor: '#1e90ff',
+    paddingVertical: 15,
+    borderRadius: 10,
     alignItems: 'center',
-    width: '100%'
-  },
-  searchText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold'
-  },
-  sub: {
-    color: '#aaa',
-    fontSize: 14,
-    marginVertical: 10,
-    textAlign: 'center'
-  },
-  thumbGrid: {
     justifyContent: 'center',
-    alignItems: 'center',
-    paddingBottom: 20
+    minHeight: 50,
   },
-  columnWrapper: {
-    justifyContent: 'center',
-  },
+  buttonDisabled: { backgroundColor: '#1e90ff80' },
+  buttonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+  flatList: { flex: 1, backgroundColor: '#121212' },
   thumbContainer: {
-    borderWidth: 2,
+    flex: 1,
+    margin: 8,
+    backgroundColor: '#222',
     borderRadius: 10,
     overflow: 'hidden',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 10,
-    elevation: 10,
-    backgroundColor: DARK_BG
+    borderWidth: 2,
+    borderColor: '#333',
+    maxWidth: '48%',
   },
-  thumbLabel: {
-    color: TEXT_COLOR,
+  thumbSelected: { borderColor: '#1e90ff', backgroundColor: '#1e1e3c' },
+  thumbnail: { width: '100%', aspectRatio: 16 / 9 },
+  qualityLabel: {
+    color: 'white',
     textAlign: 'center',
-    marginTop: 5,
-    fontSize: 12,
-    paddingBottom: 5
+    padding: 8,
+    fontSize: 14,
+    backgroundColor: '#00000080',
   },
-  downloadingOverlay: {
+  downloadButton: {
+    backgroundColor: '#1e90ff',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 20,
+    marginHorizontal: 10,
+  },
+  downloadText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  loadingIndicator: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(30, 30, 30, 0.7)',
+    top: '50%',
+    left: '50%',
+    marginLeft: -20,
+    marginTop: -20,
+  },
+  emptyContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 8
+    paddingHorizontal: 20,
+    paddingTop: 100,
   },
-  downloadBtnWrapper: {
-    position: 'absolute',
-    bottom: 20,
-    left: 20,
-    right: 20,
-    alignItems: 'center',
-    shadowColor: SELECT_COLOR,
-    shadowOffset: { width: 0, height: 0 },
-    shadowRadius: 15,
-    elevation: 15,
-  },
-  downloadBtn: {
-    backgroundColor: SELECT_COLOR,
-    padding: 14,
-    borderRadius: 30,
-    alignItems: 'center',
-    width: '100%',
-    marginTop: -90
-  },
-  // Estilos para el modal personalizado
+  emptyText: { color: '#888', textAlign: 'center', fontSize: 16 },
+
+  // Modern Alert Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
   modalContainer: {
-    backgroundColor: MODAL_BG,
-    borderRadius: 15,
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#1f1f1f',
+    borderRadius: 20,
     padding: 25,
-    width: '90%',
-    maxWidth: 400,
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: ACCENT,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+  },
+  modalSuccess: {
+    borderColor: '#2ecc71',
+    backgroundColor: '#1a1f24',
+  },
+  modalError: {
+    borderColor: '#e74c3c',
+    backgroundColor: '#1a1a1f',
+  },
+  modalInfo: {
+    borderColor: '#3498db',
+    backgroundColor: '#1a1f2a',
+  },
+  modalIcon: {
+    fontSize: 42,
+    marginBottom: 15,
   },
   modalTitle: {
-    fontSize: 20,
+    color: '#fff',
+    fontSize: 22,
     fontWeight: 'bold',
-    color: ACCENT,
-    marginBottom: 15,
     textAlign: 'center',
+    marginBottom: 8,
   },
   modalMessage: {
+    color: '#ddd',
     fontSize: 16,
-    color: TEXT_COLOR,
-    marginBottom: 20,
     textAlign: 'center',
     lineHeight: 22,
+    marginBottom: 20,
   },
   modalButton: {
-    backgroundColor: ACCENT,
-    borderRadius: 8,
-    padding: 14,
-    alignItems: 'center',
+    backgroundColor: '#1e90ff',
+    paddingVertical: 12,
+    paddingHorizontal: 35,
+    borderRadius: 10,
     marginTop: 10,
   },
   modalButtonText: {
-    color: '#fff',
+    color: 'white',
     fontWeight: 'bold',
     fontSize: 16,
   },

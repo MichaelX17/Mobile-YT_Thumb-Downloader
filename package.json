@@ -15,10 +15,12 @@
     "expo-clipboard": "^7.1.5",
     "expo-file-system": "~18.1.11",
     "expo-media-library": "~17.1.7",
+    "expo-navigation-bar": "^4.2.7",
     "expo-status-bar": "~2.2.3",
+    "expo-system-ui": "^5.0.10",
     "react": "19.0.0",
     "react-dom": "19.0.0",
-    "react-native": "0.79.5",
+    "react-native": "^0.79.5",
     "react-native-reanimated": "^4.0.1",
     "react-native-web": "^0.20.0",
     "react-native-worklets": "^0.4.1"

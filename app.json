@@ -1,33 +1,51 @@
 {
   "expo": {
-    "name": "thumb-downloader-apk",
-    "slug": "thumb-downloader-apk",
+    "name": "YT Thumb Downloader",
+    "slug": "yt-thumb-downloader",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#111111"
     },
     "ios": {
-      "supportsTablet": true
+      "statusBar": {
+        "style": "light"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#111111"
       },
-      "edgeToEdgeEnabled": true,
       "permissions": [
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
-      ]
+        "MEDIA_LIBRARY",
+        "READ_MEDIA_IMAGES"
+      ],
+      "package": "com.miguelx17.ytthumbdownloader",
+      "statusBar": {
+        "barStyle": "light-content",
+        "backgroundColor": "#121212"
+      },
+      "navigationBar": {
+        "backgroundColor": "#121212",
+        "barStyle": "light"
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "3920ccd4-38cf-4671-a1ff-1f89ed25d294"
+      }
+    },
+    "plugins": [
+      "expo-media-library"
+    ]
   }
 }
