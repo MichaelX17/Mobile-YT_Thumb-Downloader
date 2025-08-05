@@ -21,6 +21,8 @@ import {
 import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 import * as NavigationBar from 'expo-navigation-bar';
+import NetInfo from '@react-native-community/netinfo';
+
 
 interface ThumbData {
   url: string;
@@ -106,6 +108,17 @@ export default function App() {
   };
 
   const handleSearch = async () => {
+    const netState = await NetInfo.fetch();
+
+    if (!netState.isConnected || !netState.isInternetReachable) {
+      showAlert(
+        'No Connection',
+        'You are not connected to the internet. Please check your connection and try again.',
+        'info'
+      );
+      return;
+    }
+
     if (!url.trim()) {
       showAlert('Empty URL', 'Please enter a YouTube URL', 'error');
       resetAppState();
@@ -114,7 +127,10 @@ export default function App() {
 
     resetAppState(false);
 
-    const id = extractVideoId(url);
+    const rawInput = url.trim();
+    const cleanedUrl = extractFirstYouTubeUrl(rawInput) || rawInput;
+    const id = extractVideoId(cleanedUrl);
+
     if (!id) {
       showAlert('Invalid URL', 'Please enter a valid YouTube URL', 'error');
       resetAppState();
@@ -136,7 +152,7 @@ export default function App() {
       }
 
       if (availableThumbs.length === 0) {
-        showAlert('No results', 'No thumbnails found', 'error');
+        showAlert('No Results', 'No thumbnails found', 'error');
         resetAppState();
         return;
       }
@@ -157,6 +173,7 @@ export default function App() {
     }
   };
 
+
   const checkThumbExists = async (url: string): Promise<boolean> => {
     try {
       const response = await fetch(url, { method: 'HEAD' });
@@ -166,17 +183,47 @@ export default function App() {
     }
   };
 
-  const extractVideoId = (url: string): string | null => {
-    const patterns = [
-      /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/,
-      /^([a-zA-Z0-9_-]{11})$/,
-    ];
-    for (const regex of patterns) {
-      const match = url.match(regex);
-      if (match?.[1]) return match[1];
+  const extractFirstYouTubeUrl = (text: string): string | null => {
+    const regex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\/[^\s]+/g;
+    const matches = text.match(regex);
+    return matches?.[0] ?? null;
+  };
+
+
+
+  const extractVideoId = (input: string): string | null => {
+    try {
+      const url = new URL(input.trim());
+
+      // https://www.youtube.com/watch?v=VIDEOID
+      if (url.hostname.includes('youtube.com')) {
+        if (url.pathname === '/watch') {
+          return url.searchParams.get('v');
+        }
+
+        // https://www.youtube.com/embed/VIDEOID
+        const embedMatch = url.pathname.match(/^\/embed\/([a-zA-Z0-9_-]{11})/);
+        if (embedMatch) return embedMatch[1];
+
+        // https://www.youtube.com/shorts/VIDEOID
+        const shortsMatch = url.pathname.match(/^\/shorts\/([a-zA-Z0-9_-]{11})/);
+        if (shortsMatch) return shortsMatch[1];
+      }
+
+      // https://youtu.be/VIDEOID
+      if (url.hostname === 'youtu.be') {
+        const idMatch = url.pathname.match(/^\/([a-zA-Z0-9_-]{11})/);
+        if (idMatch) return idMatch[1];
+      }
+    } catch {
+      // No es una URL completa, verificar si es un ID directo
+      if (/^[a-zA-Z0-9_-]{11}$/.test(input.trim())) return input.trim();
     }
+
     return null;
   };
+
+
 
   const toggleSelect = (thumb: ThumbData) => {
     setSelected((prev) =>
@@ -187,6 +234,16 @@ export default function App() {
   };
 
   const downloadSelected = async () => {
+    const netState = await NetInfo.fetch();
+    if (!netState.isConnected || !netState.isInternetReachable) {
+      showAlert(
+        'No Connection',
+        'You are not connected to the internet. Please check your connection and try again.',
+        'info'
+      );
+      return;
+    }
+
     if (selected.length === 0) return;
 
     try {
@@ -225,7 +282,7 @@ export default function App() {
         if (album) {
           await MediaLibrary.addAssetsToAlbumAsync(assets, album, false);
         } else {
-          await MediaLibrary.createAlbumAsync('YouTube Thumbs', assets[0], false);
+          await MediaLibrary.createAlbumAsync('YouTube Thumbs', assets[0], true);
           if (assets.length > 1) {
             const newAlbum = await MediaLibrary.getAlbumAsync('YouTube Thumbs');
             if (newAlbum) {
