@@ -26,6 +26,7 @@ interface ThumbData {
   url: string;
   quality: string;
   videoId: string;
+  placeholder?: boolean;
 }
 
 interface AlertState {
@@ -45,7 +46,7 @@ export default function App() {
     visible: false,
     title: '',
     message: '',
-    type: 'info'
+    type: 'info',
   });
 
   const { height: windowHeight } = useWindowDimensions();
@@ -81,7 +82,7 @@ export default function App() {
   };
 
   const hideAlert = () => {
-    setAlert(prev => ({ ...prev, visible: false }));
+    setAlert((prev) => ({ ...prev, visible: false }));
   };
 
   const resetAppState = (animate = true) => {
@@ -94,6 +95,14 @@ export default function App() {
         useNativeDriver: true,
       }).start();
     }
+  };
+
+  const qualityToResolutionMap: Record<string, string> = {
+    maxresdefault: '1920x1080',
+    sddefault: '640x480',
+    hqdefault: '480x360',
+    mqdefault: '320x180',
+    default: '120x90',
   };
 
   const handleSearch = async () => {
@@ -117,7 +126,7 @@ export default function App() {
 
     try {
       const base = `https://img.youtube.com/vi/${id}`;
-      const qualities = ['maxresdefault', 'sddefault', 'hqdefault', 'mqdefault'];
+      const qualities = ['maxresdefault', 'sddefault', 'hqdefault', 'mqdefault', 'default'];
       const availableThumbs: ThumbData[] = [];
 
       for (const q of qualities) {
@@ -196,9 +205,10 @@ export default function App() {
       setLoading(true);
 
       const savePromises = selected.map(async (thumb) => {
-        const filename = `yt_thumb_${thumb.videoId}_${thumb.quality}.jpg`;
+        const resolution = qualityToResolutionMap[thumb.quality] || thumb.quality;
+        const filename = `YT_Thumb-[${thumb.videoId}]-[${resolution}].jpg`;
         const fileUri = `${FileSystem.cacheDirectory}${filename}`;
-        
+
         try {
           const { uri } = await FileSystem.downloadAsync(thumb.url, fileUri);
           return MediaLibrary.createAssetAsync(uri);
@@ -236,16 +246,32 @@ export default function App() {
     }
   };
 
-  const renderThumb = ({ item }: { item: ThumbData }) => (
-    <TouchableOpacity
-      style={[styles.thumbContainer, selected.some((t) => t.url === item.url) && styles.thumbSelected]}
-      onPress={() => toggleSelect(item)}
-      activeOpacity={0.7}
-    >
-      <Image source={{ uri: item.url }} style={styles.thumbnail} resizeMode="cover" />
-      <Text style={styles.qualityLabel}>{item.quality}</Text>
-    </TouchableOpacity>
-  );
+  const getAdjustedThumbs = (): ThumbData[] => {
+    if (thumbs.length % 2 === 0) return thumbs;
+    return [...thumbs, { url: '', quality: '', videoId: '', placeholder: true }];
+  };
+
+  const renderThumb = ({ item }: { item: ThumbData }) => {
+    if (item.placeholder) {
+      return <View style={styles.thumbPlaceholder} />;
+    }
+
+    return (
+      <TouchableOpacity
+        style={[
+          styles.thumbContainer,
+          selected.some((t) => t.url === item.url) && styles.thumbSelected,
+        ]}
+        onPress={() => toggleSelect(item)}
+        activeOpacity={0.7}
+      >
+        <Image source={{ uri: item.url }} style={styles.thumbnail} resizeMode="cover" />
+        <Text style={styles.qualityLabel}>
+          {qualityToResolutionMap[item.quality] || item.quality}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
 
   const getAlertIcon = () => {
     switch (alert.type) {
@@ -291,7 +317,11 @@ export default function App() {
               disabled={loading}
               activeOpacity={0.7}
             >
-              {loading ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>Search</Text>}
+              {loading ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <Text style={styles.buttonText}>Search</Text>
+              )}
             </TouchableOpacity>
           </Animated.View>
 
@@ -300,11 +330,15 @@ export default function App() {
           )}
 
           <FlatList
-            data={thumbs}
-            keyExtractor={(item) => item.url}
+            data={getAdjustedThumbs()}
+            keyExtractor={(item, index) => item.url + index}
             renderItem={renderThumb}
             numColumns={2}
-            contentContainerStyle={{ paddingTop: thumbs.length > 0 ? 220 : 0, paddingBottom: 20 }}
+            contentContainerStyle={{
+              paddingTop: thumbs.length > 0 ? 220 : 0,
+              paddingBottom: 20,
+              paddingHorizontal: 8,
+            }}
             style={styles.flatList}
             ListEmptyComponent={
               !loading ? (
@@ -334,26 +368,20 @@ export default function App() {
         </View>
       </KeyboardAvoidingView>
 
-      <Modal
-        visible={alert.visible}
-        transparent
-        animationType="fade"
-        onRequestClose={hideAlert}
-      >
+      <Modal visible={alert.visible} transparent animationType="fade" onRequestClose={hideAlert}>
         <View style={styles.modalOverlay}>
-          <View style={[
-            styles.modalContainer,
-            alert.type === 'success' && styles.modalSuccess,
-            alert.type === 'error' && styles.modalError,
-            alert.type === 'info' && styles.modalInfo
-          ]}>
+          <View
+            style={[
+              styles.modalContainer,
+              alert.type === 'success' && styles.modalSuccess,
+              alert.type === 'error' && styles.modalError,
+              alert.type === 'info' && styles.modalInfo,
+            ]}
+          >
             <Text style={styles.modalIcon}>{getAlertIcon()}</Text>
             <Text style={styles.modalTitle}>{alert.title}</Text>
             <Text style={styles.modalMessage}>{alert.message}</Text>
-            <TouchableOpacity
-              style={styles.modalButton}
-              onPress={hideAlert}
-            >
+            <TouchableOpacity style={styles.modalButton} onPress={hideAlert}>
               <Text style={styles.modalButtonText}>OK</Text>
             </TouchableOpacity>
           </View>
@@ -412,6 +440,12 @@ const styles = StyleSheet.create({
     maxWidth: '48%',
   },
   thumbSelected: { borderColor: '#1e90ff', backgroundColor: '#1e1e3c' },
+  thumbPlaceholder: {
+    flex: 1,
+    margin: 8,
+    maxWidth: '48%',
+    backgroundColor: 'transparent',
+  },
   thumbnail: { width: '100%', aspectRatio: 16 / 9 },
   qualityLabel: {
     color: 'white',
@@ -425,7 +459,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 10,
     marginHorizontal: 10,
   },
   downloadText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
