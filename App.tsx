@@ -1,5 +1,3 @@
-// ... importaciones
-
 import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
@@ -24,6 +22,7 @@ import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 import * as NavigationBar from 'expo-navigation-bar';
 import NetInfo from '@react-native-community/netinfo';
+
 
 interface ThumbData {
   url: string;
@@ -55,6 +54,8 @@ export default function App() {
   const { height: windowHeight } = useWindowDimensions();
   const initialTranslateY = useRef(windowHeight * 0.3).current;
   const formTranslateY = useRef(new Animated.Value(initialTranslateY)).current;
+  const [hasSearched, setHasSearched] = useState(false);
+
 
   useEffect(() => {
     if (Platform.OS === 'android') {
@@ -74,7 +75,8 @@ export default function App() {
       }
     });
     return () => sub.remove();
-  }, [thumbs.length]);
+  }, []);
+
 
   const showAlert = (
     title: string,
@@ -91,6 +93,7 @@ export default function App() {
   const resetAppState = (animate = true) => {
     setThumbs([]);
     setSelected([]);
+    setHasSearched(false);
     if (animate) {
       Animated.timing(formTranslateY, {
         toValue: initialTranslateY,
@@ -99,6 +102,7 @@ export default function App() {
       }).start();
     }
   };
+
 
   const qualityToResolutionMap: Record<string, string> = {
     maxresdefault: '1920x1080',
@@ -127,6 +131,8 @@ export default function App() {
     }
 
     resetAppState(false);
+    setHasSearched(true);
+
 
     const rawInput = url.trim();
     const cleanedUrl = extractFirstYouTubeUrl(rawInput) || rawInput;
@@ -174,6 +180,7 @@ export default function App() {
     }
   };
 
+
   const checkThumbExists = async (url: string): Promise<boolean> => {
     try {
       const response = await fetch(url, { method: 'HEAD' });
@@ -189,32 +196,41 @@ export default function App() {
     return matches?.[0] ?? null;
   };
 
+
+
   const extractVideoId = (input: string): string | null => {
     try {
       const url = new URL(input.trim());
 
+      // https://www.youtube.com/watch?v=VIDEOID
       if (url.hostname.includes('youtube.com')) {
         if (url.pathname === '/watch') {
           return url.searchParams.get('v');
         }
 
+        // https://www.youtube.com/embed/VIDEOID
         const embedMatch = url.pathname.match(/^\/embed\/([a-zA-Z0-9_-]{11})/);
         if (embedMatch) return embedMatch[1];
 
+        // https://www.youtube.com/shorts/VIDEOID
         const shortsMatch = url.pathname.match(/^\/shorts\/([a-zA-Z0-9_-]{11})/);
         if (shortsMatch) return shortsMatch[1];
       }
 
+      // https://youtu.be/VIDEOID
       if (url.hostname === 'youtu.be') {
         const idMatch = url.pathname.match(/^\/([a-zA-Z0-9_-]{11})/);
         if (idMatch) return idMatch[1];
       }
     } catch {
+      // No es una URL completa, verificar si es un ID directo
       if (/^[a-zA-Z0-9_-]{11}$/.test(input.trim())) return input.trim();
     }
 
     return null;
   };
+
+
 
   const toggleSelect = (thumb: ThumbData) => {
     setSelected((prev) =>
@@ -252,34 +268,38 @@ export default function App() {
 
       setLoading(true);
 
-      const assets: MediaLibrary.Asset[] = [];
-
-      for (const thumb of selected) {
+      const savePromises = selected.map(async (thumb) => {
         const resolution = qualityToResolutionMap[thumb.quality] || thumb.quality;
         const filename = `YT_Thumb-[${thumb.videoId}]-[${resolution}].jpg`;
         const fileUri = `${FileSystem.cacheDirectory}${filename}`;
 
         try {
           const { uri } = await FileSystem.downloadAsync(thumb.url, fileUri);
-          const asset = await MediaLibrary.createAssetAsync(uri);
-          assets.push(asset);
+
+          // CAMBIO CLAVE: Usar createAssetAsync en lugar de saveToLibraryAsync
+          return MediaLibrary.createAssetAsync(uri);
         } catch (error) {
           console.error(`Download error [${thumb.quality}]:`, error);
+          return null;
         }
-      }
+      });
+
+      const assets = (await Promise.all(savePromises)).filter(Boolean) as MediaLibrary.Asset[];
 
       if (assets.length > 0) {
-        let album = await MediaLibrary.getAlbumAsync('YouTube Thumbs');
-
-        if (!album) {
-          album = await MediaLibrary.createAlbumAsync('YouTube Thumbs', assets[0], true);
-          if (assets.length > 1) {
-            await MediaLibrary.addAssetsToAlbumAsync(assets.slice(1), album, false);
-          }
-        } else {
+        const album = await MediaLibrary.getAlbumAsync('YouTube Thumbs');
+        if (album) {
           await MediaLibrary.addAssetsToAlbumAsync(assets, album, false);
-        }
+        } else {
+          await MediaLibrary.createAlbumAsync('YouTube Thumbs', assets[0], true);
 
+          if (assets.length > 1) {
+            const newAlbum = await MediaLibrary.getAlbumAsync('YouTube Thumbs');
+            if (newAlbum) {
+              await MediaLibrary.addAssetsToAlbumAsync(assets.slice(1), newAlbum, false);
+            }
+          }
+        }
         showAlert('Success', `${assets.length} images saved successfully`, 'success');
       } else {
         showAlert('Error', 'Failed to save images', 'error');
@@ -378,7 +398,7 @@ export default function App() {
 
           <FlatList
             data={getAdjustedThumbs()}
-            keyExtractor={(item, index) => item.url + index}
+            keyExtractor={(item) => item.url || `placeholder-${Math.random()}`}
             renderItem={renderThumb}
             numColumns={2}
             contentContainerStyle={{
@@ -391,7 +411,7 @@ export default function App() {
               !loading ? (
                 <View style={styles.emptyContainer}>
                   <Text style={styles.emptyText}>
-                    {url ? 'No thumbnails found' : 'Enter a YouTube URL'}
+                    {!hasSearched ? 'Enter a YouTube URL' : 'No thumbnails found'}
                   </Text>
                 </View>
               ) : null
@@ -439,9 +459,6 @@ export default function App() {
     </SafeAreaView>
   );
 }
-
-// ... tus estilos (igual que antes)
-
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#121212' },
