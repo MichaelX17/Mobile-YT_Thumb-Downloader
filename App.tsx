@@ -75,8 +75,7 @@ export default function App() {
       }
     });
     return () => sub.remove();
-  }, []);
-
+  }, [thumbs.length]);
 
   const showAlert = (
     title: string,
@@ -398,7 +397,7 @@ export default function App() {
 
           <FlatList
             data={getAdjustedThumbs()}
-            keyExtractor={(item) => item.url || `placeholder-${Math.random()}`}
+            keyExtractor={(item, index) => item.url + index}
             renderItem={renderThumb}
             numColumns={2}
             contentContainerStyle={{
