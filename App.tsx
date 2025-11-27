@@ -19,10 +19,8 @@ import {
   Modal,
 } from 'react-native';
 import * as FileSystem from 'expo-file-system';
-import * as MediaLibrary from 'expo-media-library';
 import * as NavigationBar from 'expo-navigation-bar';
 import NetInfo from '@react-native-community/netinfo';
-
 
 interface ThumbData {
   url: string;
@@ -43,7 +41,6 @@ export default function App() {
   const [thumbs, setThumbs] = useState<ThumbData[]>([]);
   const [selected, setSelected] = useState<ThumbData[]>([]);
   const [loading, setLoading] = useState(false);
-  const [permissionStatus, requestPermission] = MediaLibrary.usePermissions();
   const [alert, setAlert] = useState<AlertState>({
     visible: false,
     title: '',
@@ -55,7 +52,6 @@ export default function App() {
   const initialTranslateY = useRef(windowHeight * 0.3).current;
   const formTranslateY = useRef(new Animated.Value(initialTranslateY)).current;
   const [hasSearched, setHasSearched] = useState(false);
-
 
   useEffect(() => {
     if (Platform.OS === 'android') {
@@ -102,7 +98,6 @@ export default function App() {
     }
   };
 
-
   const qualityToResolutionMap: Record<string, string> = {
     maxresdefault: '1920x1080',
     sddefault: '640x480',
@@ -131,7 +126,6 @@ export default function App() {
 
     resetAppState(false);
     setHasSearched(true);
-
 
     const rawInput = url.trim();
     const cleanedUrl = extractFirstYouTubeUrl(rawInput) || rawInput;
@@ -179,7 +173,6 @@ export default function App() {
     }
   };
 
-
   const checkThumbExists = async (url: string): Promise<boolean> => {
     try {
       const response = await fetch(url, { method: 'HEAD' });
@@ -194,8 +187,6 @@ export default function App() {
     const matches = text.match(regex);
     return matches?.[0] ?? null;
   };
-
-
 
   const extractVideoId = (input: string): string | null => {
     try {
@@ -229,13 +220,9 @@ export default function App() {
     return null;
   };
 
-
-
   const toggleSelect = (thumb: ThumbData) => {
     setSelected((prev) =>
-      prev.some((t) => t.url === thumb.url)
-        ? prev.filter((t) => t.url !== thumb.url)
-        : [...prev, thumb]
+      prev.some((t) => t.url === thumb.url) ? prev.filter((t) => t.url !== thumb.url) : [...prev, thumb]
     );
   };
 
@@ -252,54 +239,50 @@ export default function App() {
 
     if (selected.length === 0) return;
 
+    setLoading(true);
+
     try {
-      let status = permissionStatus?.status;
-
-      if (!status || status !== 'granted') {
-        const result = await requestPermission();
-        status = result.status;
+      // Guardar en el scope de la app (documentDirectory)
+      const thumbnailsDir = `${FileSystem.documentDirectory}thumbnails/`;
+      // crear carpeta si no existe
+      try {
+        const dirInfo = await FileSystem.getInfoAsync(thumbnailsDir);
+        if (!dirInfo.exists) {
+          await FileSystem.makeDirectoryAsync(thumbnailsDir, { intermediates: true });
+        }
+      } catch (err) {
+        // Si falla la comprobación/creación, intentar crear igualmente
+        try {
+          await FileSystem.makeDirectoryAsync(thumbnailsDir, { intermediates: true });
+        } catch (e) {
+          console.error('Failed to create thumbnails dir:', e);
+          throw e;
+        }
       }
 
-      if (status !== 'granted') {
-        showAlert('Permission denied', 'Gallery access is required to save images', 'error');
-        return;
-      }
+      const savedPaths: string[] = [];
 
-      setLoading(true);
-
-      const savePromises = selected.map(async (thumb) => {
+      for (const thumb of selected) {
         const resolution = qualityToResolutionMap[thumb.quality] || thumb.quality;
-        const filename = `YT_Thumb-[${thumb.videoId}]-[${resolution}].jpg`;
-        const fileUri = `${FileSystem.cacheDirectory}${filename}`;
+        const safeVideoId = thumb.videoId || 'unknown';
+        const filename = `YT_Thumb-[${safeVideoId}]-[${resolution}].jpg`;
+        const fileUri = `${thumbnailsDir}${filename}`;
 
         try {
-          const { uri } = await FileSystem.downloadAsync(thumb.url, fileUri);
-
-          // CAMBIO CLAVE: Usar createAssetAsync en lugar de saveToLibraryAsync
-          return MediaLibrary.createAssetAsync(uri);
+          const downloadResult = await FileSystem.downloadAsync(thumb.url, fileUri);
+          // downloadResult.uri -> path local donde se guardó el archivo
+          savedPaths.push(downloadResult.uri);
         } catch (error) {
           console.error(`Download error [${thumb.quality}]:`, error);
-          return null;
         }
-      });
+      }
 
-      const assets = (await Promise.all(savePromises)).filter(Boolean) as MediaLibrary.Asset[];
-
-      if (assets.length > 0) {
-        const album = await MediaLibrary.getAlbumAsync('YouTube Thumbs');
-        if (album) {
-          await MediaLibrary.addAssetsToAlbumAsync(assets, album, false);
-        } else {
-          await MediaLibrary.createAlbumAsync('YouTube Thumbs', assets[0], true);
-
-          if (assets.length > 1) {
-            const newAlbum = await MediaLibrary.getAlbumAsync('YouTube Thumbs');
-            if (newAlbum) {
-              await MediaLibrary.addAssetsToAlbumAsync(assets.slice(1), newAlbum, false);
-            }
-          }
-        }
-        showAlert('Success', `${assets.length} images saved successfully`, 'success');
+      if (savedPaths.length > 0) {
+        showAlert(
+          'Success',
+          `${savedPaths.length} images saved to app storage.\nPath: ${thumbnailsDir}`,
+          'success'
+        );
       } else {
         showAlert('Error', 'Failed to save images', 'error');
       }
@@ -383,11 +366,7 @@ export default function App() {
               disabled={loading}
               activeOpacity={0.7}
             >
-              {loading ? (
-                <ActivityIndicator color="white" />
-              ) : (
-                <Text style={styles.buttonText}>Search</Text>
-              )}
+              {loading ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>Search</Text>}
             </TouchableOpacity>
           </Animated.View>
 
@@ -397,7 +376,7 @@ export default function App() {
 
           <FlatList
             data={getAdjustedThumbs()}
-            keyExtractor={(item, index) => item.url + index}
+            keyExtractor={(item, index) => (item.url || 'placeholder') + index}
             renderItem={renderThumb}
             numColumns={2}
             contentContainerStyle={{
@@ -423,11 +402,7 @@ export default function App() {
                   activeOpacity={0.8}
                   disabled={loading}
                 >
-                  {loading ? (
-                    <ActivityIndicator color="white" />
-                  ) : (
-                    <Text style={styles.downloadText}>Download ({selected.length})</Text>
-                  )}
+                  {loading ? <ActivityIndicator color="white" /> : <Text style={styles.downloadText}>Download ({selected.length})</Text>}
                 </TouchableOpacity>
               ) : null
             }
