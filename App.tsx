@@ -243,7 +243,10 @@ export default function App() {
 
     try {
       // Guardar en el scope de la app (documentDirectory)
-      const thumbnailsDir = `${FileSystem.documentDirectory}thumbnails/`;
+      // TypeScript fix para proyectos Bare o builds externos
+      const FS = FileSystem as any;
+      const thumbnailsDir = `${FS.documentDirectory}thumbnails/`;
+
       // crear carpeta si no existe
       try {
         const dirInfo = await FileSystem.getInfoAsync(thumbnailsDir);
