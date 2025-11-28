@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import NetInfo from '@react-native-community/netinfo';
 import { ThumbData } from '../types';
 import { qualityToResolutionMap } from '../utils/youtube';
@@ -30,21 +30,12 @@ export const useThumbnailDownloader = (showAlert: (title: string, message: strin
         setDownloading(true);
 
         try {
-            const FS = FileSystem as any;
-            const thumbnailsDir = `${FS.documentDirectory}thumbnails/`;
+            const thumbnailsDir = `${FileSystem.documentDirectory}thumbnails/`;
 
-            try {
-                const dirInfo = await FileSystem.getInfoAsync(thumbnailsDir);
-                if (!dirInfo.exists) {
-                    await FileSystem.makeDirectoryAsync(thumbnailsDir, { intermediates: true });
-                }
-            } catch (err) {
-                try {
-                    await FileSystem.makeDirectoryAsync(thumbnailsDir, { intermediates: true });
-                } catch (e) {
-                    console.error('Failed to create thumbnails dir:', e);
-                    throw e;
-                }
+            // Crear carpeta si no existe
+            const dirInfo = await FileSystem.getInfoAsync(thumbnailsDir);
+            if (!dirInfo.exists) {
+                await FileSystem.makeDirectoryAsync(thumbnailsDir, { intermediates: true });
             }
 
             const savedPaths: string[] = [];
@@ -56,8 +47,8 @@ export const useThumbnailDownloader = (showAlert: (title: string, message: strin
                 const fileUri = `${thumbnailsDir}${filename}`;
 
                 try {
-                    const downloadResult = await FileSystem.downloadAsync(thumb.url, fileUri);
-                    savedPaths.push(downloadResult.uri);
+                    const res = await FileSystem.downloadAsync(thumb.url, fileUri);
+                    savedPaths.push(res.uri);
                 } catch (error) {
                     console.error(`Download error [${thumb.quality}]:`, error);
                 }
@@ -66,7 +57,7 @@ export const useThumbnailDownloader = (showAlert: (title: string, message: strin
             if (savedPaths.length > 0) {
                 showAlert(
                     'Success',
-                    `${savedPaths.length} images saved to app storage.\nPath: ${thumbnailsDir}`,
+                    `${savedPaths.length} images saved.\nPath: ${thumbnailsDir}`,
                     'success'
                 );
             } else {
